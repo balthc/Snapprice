@@ -1,8 +1,9 @@
 import { COUNTRIES } from "./countries";
 import { eurRates, toEur } from "./currency";
+import { serpApiKey } from "./env";
 import type { Offer } from "./types";
 
-export const hasSerpApi = () => Boolean(process.env.SERPAPI_API_KEY);
+export const hasSerpApi = () => Boolean(serpApiKey());
 
 type SerpShoppingItem = {
   title?: string;
@@ -39,7 +40,7 @@ export async function searchCountry(query: string, cc: string): Promise<Offer[]>
     hl: c.hl,
     google_domain: c.domain,
     num: "40",
-    api_key: process.env.SERPAPI_API_KEY!,
+    api_key: serpApiKey()!,
   });
   const res = await fetch(`https://serpapi.com/search.json?${params}`, { signal: AbortSignal.timeout(25_000) });
   if (!res.ok) throw new Error(`SerpApi ${cc.toUpperCase()} ${res.status}`);

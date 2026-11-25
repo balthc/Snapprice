@@ -2,13 +2,14 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { Product } from "./types";
+import { anthropicKey } from "./env";
 
-export const hasClaude = () => Boolean(process.env.ANTHROPIC_API_KEY);
+export const hasClaude = () => Boolean(anthropicKey());
 const model = () => process.env.CLAUDE_MODEL || "claude-opus-5-5";
 
 let client: Anthropic | null = null;
 function claude() {
-  client ??= new Anthropic({ maxRetries: 2, timeout: 60_000 });
+  client ??= new Anthropic({ apiKey: anthropicKey()!, maxRetries: 2, timeout: 60_000 });
   return client;
 }
 

@@ -58,6 +58,10 @@ export default function Finder() {
   const [over, setOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const quota = useQuota();
+  const [status, setStatus] = useState<{ livePrices: boolean; recognition: boolean; version: string } | null>(null);
+  useEffect(() => {
+    fetch("/api/status", { cache: "no-store" }).then((r) => r.json()).then(setStatus).catch(() => {});
+  }, []);
   const busy = stage === "identifying" || stage === "searching";
   const blocked = ENFORCE_LIMIT && quota.left === 0;
 
@@ -142,7 +146,15 @@ export default function Finder() {
 
   return (
     <div className="app" role="region" aria-label="Price finder">
-      <div className="bar"><i></i><i></i><i></i><span>snapprice.app/search</span></div>
+      <div className="bar">
+        <i></i><i></i><i></i><span>snapprice.app/search</span>
+        {status && (
+          <span className="modes" title={`Version ${status.version}`}>
+            <span className={`mode ${status.livePrices ? "on" : "off"}`}>{status.livePrices ? "Live prices" : "Demo prices"}</span>
+            <span className={`mode ${status.recognition ? "on" : "off"}`}>{status.recognition ? "Screenshot recognition on" : "Screenshot recognition off"}</span>
+          </span>
+        )}
+      </div>
       <div className="app-grid">
         <div className="app-left">
           <label
@@ -216,6 +228,11 @@ export default function Finder() {
           )}
           {result && stage === "done" && (
             <>
+              {result.demo ? (
+                <p className="err"><b>Sample results, not real shops.</b> The site can&apos;t see a SerpApi key yet, so these are made-up example prices.</p>
+              ) : (
+                <p className="live-note"><span className="mode on">Live</span> Real prices from Google Shopping, checked just now.</p>
+              )}
               <div className="res-head">
                 <h3>{offers.length ? `${offers.length} ${offers.length === 1 ? "shop has" : "shops have"} it` : "No exact matches found"}</h3>
                 <p>Sorted by price with shipping · {result.countries.join(", ")}</p>
