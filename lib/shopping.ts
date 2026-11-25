@@ -82,6 +82,18 @@ export function brandFilter(offers: Offer[], brand: string): Offer[] {
   return offers.filter((o) => words.some((w) => o.title.toLowerCase().includes(w)));
 }
 
+// Used when Claude is not configured: most of the search words must appear in the listing title.
+export function keywordFilter(offers: Offer[], query: string): Offer[] {
+  const norm = (t: string) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const words = [...new Set(norm(query).split(/[^a-z0-9]+/).filter((w) => w.length > 2))];
+  if (!words.length) return offers;
+  const need = Math.max(1, Math.ceil(words.length * 0.75));
+  return offers.filter((o) => {
+    const t = norm(o.title);
+    return words.filter((w) => t.includes(w)).length >= need;
+  });
+}
+
 // Same shop listing the same price in several countries shows up repeatedly; keep the cheapest per shop.
 export function dedupe(offers: Offer[]): Offer[] {
   const best = new Map<string, Offer>();

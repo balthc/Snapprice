@@ -3,7 +3,7 @@ import { z } from "zod";
 import { classifyListings, hasClaude } from "@/lib/claude";
 import { homeCountry, searchCountries } from "@/lib/countries";
 import { mockOffers } from "@/lib/mock";
-import { brandFilter, dedupe, hasSerpApi, searchCountry } from "@/lib/shopping";
+import { brandFilter, dedupe, hasSerpApi, keywordFilter, searchCountry } from "@/lib/shopping";
 import type { Offer, SearchResult } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -73,8 +73,9 @@ export async function POST(req: Request) {
       offers = brandFilter(offers, product.brand);
       warnings.push("Exact-match check was unavailable, so some results may be similar items.");
     }
-  } else {
-    offers = brandFilter(offers, product.brand);
+  } else if (offers.length) {
+    offers = keywordFilter(offers, product.searchQuery);
+    warnings.push("The exact-match check is off (it needs the Claude key), so a few results may be similar items rather than the exact product.");
   }
 
   // Throw away extreme outliers (usually accessories or kids' versions that slipped through).
