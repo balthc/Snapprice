@@ -61,6 +61,19 @@ Now the site recognises real screenshots and shows live prices. Keep the keys se
 
 ---
 
+## Taking the site offline for a while
+
+1. In Vercel, open **Settings → Environment Variables**.
+2. Add `MAINTENANCE_MODE` with the value `true` (Production ticked), and `MAINTENANCE_BYPASS` with a secret word only you know, e.g. `appel2026`.
+3. Go to **Deployments → ⋯ → Redeploy**.
+
+Visitors now see a "Coming soon" page, and searches are switched off so no SerpApi or Claude costs are made.
+To still see the real site yourself, visit `https://your-site.vercel.app/?preview=appel2026` once. Your browser remembers it for 30 days. Visit `/?preview=off` to see the "Coming soon" page again.
+
+To bring the site back: change `MAINTENANCE_MODE` to `false` (or delete it) and redeploy.
+
+---
+
 ## Editing the site
 
 Every change saved to this GitHub repository goes live on Vercel automatically within a minute or two.
