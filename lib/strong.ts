@@ -1,7 +1,7 @@
 // Strong text evidence that a listing is the shopper's exact product:
 // - "code": the manufacturer's article/style code appears in the title (e.g. I029919)
 // - "model": every word of the model name appears (e.g. "Flint Pant") and nothing contradicts kind or colour
-import { contradicts } from "./attributes";
+import { coloursOf, contradicts, kindOf } from "./attributes";
 import type { Product } from "./types";
 
 const norm = (t: string) => t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -33,4 +33,39 @@ export function strongMatch(title: string, product: Product): "code" | "model" |
   const brandOk = norm(product.brand).split(/\s+/).filter((w) => w.length > 1).every((w) => n.includes(w));
   if (words.length && brandOk && words.every((w) => n.includes(w)) && !contradicts(title, product)) return "model";
   return null;
+}
+
+// Words that identify the item in any language: the model name minus item-type words, colours,
+// seasons and generic words (those are written differently per shop and language).
+const GENERIC = new Set(["home", "away", "third", "men", "mens", "women", "womens", "unisex", "official", "new", "the", "and", "with",
+  "replica", "authentic", "stadium", "edition", "version", "season", "kit", "size", "adult", "adults"]);
+export function distinctiveWords(product: Product): string[] {
+  const brand = new Set(norm(product.brand).split(/\s+/));
+  return [...new Set(norm(product.model).split(/[^a-z0-9]+/))].filter(
+    (w) => w.length > 1 && !brand.has(w) && !GENERIC.has(w) && !/^\d{1,4}$/.test(w) && !kindOf(w) && !coloursOf(w).length
+  );
+}
+
+// Free fallback when no AI check is set up: keep listings that name the item's distinctive words
+// (or the brand, when the model has none). Language-independent, so "Ajax Heimtrikot" counts for "Ajax home shirt".
+export function keywordMatch(title: string, product: Product): boolean {
+  const t = norm(title);
+  const words = distinctiveWords(product);
+  if (words.length) return words.filter((w) => t.includes(w)).length >= Math.max(1, Math.ceil(words.length * 0.6));
+  return norm(product.brand).split(/\s+/).filter((w) => w.length > 1).every((w) => t.includes(w));
+}
+
+// Shorter query for the shops' search: brand + model (+ article code). Colour and type words narrow
+// Google Shopping too much in other languages; our filters check those afterwards.
+export function shopQuery(product: Product): string {
+  const base = [product.brand, product.model, product.articleCode ?? ""].join(" ");
+  const seen = new Set<string>();
+  const words = base.split(/\s+/).filter((w) => {
+    const k = norm(w);
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  const q = words.slice(0, 9).join(" ");
+  return q.length >= 3 && words.length >= 2 ? q : product.searchQuery;
 }

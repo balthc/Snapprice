@@ -42,11 +42,11 @@ export function classifyPrompt(product: Product, titles: string[]): string {
   const list = titles.map((t, i) => `${i}: ${t}`).join("\n");
   return `Target product: ${describe(product)} (${product.category}).
 
-Below are webshop listing titles in several languages. Be strict: the shopper wants this exact item, not something from the same brand.
+Below are webshop listing titles in several languages (shops write the same item differently: "Ajax thuisshirt", "Heimtrikot", "maillot domicile" and "home jersey" are the same thing).
 For each, say:
-- "exact": same brand and same model (or clearly the same item type and details), same colour or colour not stated
-- "likely": same brand and same item type, but the title doesn't say enough to be sure it is the same model or colour
-- "different": a different item type (e.g. overshirt vs hooded jacket), another model, another colour, a copy, an accessory, or kids' version
+- "exact": same brand or team and same model (or clearly the same item and details). A title that doesn't mention the colour, season or every detail still counts as exact when nothing in it contradicts the target.
+- "likely": same brand and item type, but it could well be another model.
+- "different": another item type (e.g. shorts vs shirt), another model or season, another colour, a kids' version (unless the target is for kids), a copy, or an accessory.
 
 ${list}`;
 }

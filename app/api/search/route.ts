@@ -5,7 +5,7 @@ import { COUNTRIES, homeCountry, maxCountries, searchCountries } from "@/lib/cou
 import { ebayMarkets, hasEbay, searchEbay } from "@/lib/ebay";
 import { mockOffers } from "@/lib/mock";
 import { contradicts } from "@/lib/attributes";
-import { strongMatch } from "@/lib/strong";
+import { keywordMatch, shopQuery, strongMatch } from "@/lib/strong";
 import { describe } from "@/lib/prompts";
 import { inspectPage } from "@/lib/page";
 import { hasShopify, searchShopify } from "@/lib/shopify";
@@ -13,7 +13,7 @@ import { countryFromUrl } from "@/lib/lens";
 import { eurRates, toEur } from "@/lib/currency";
 import { verifyOffers } from "@/lib/verify";
 import { hasFeeds, searchFeeds } from "@/lib/feeds";
-import { activeProviders, dedupe, hasShopping, keywordFilter, searchCountry } from "@/lib/shopping";
+import { activeProviders, dedupe, hasShopping, searchCountry } from "@/lib/shopping";
 import type { Offer, SearchEvent, SearchResult } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -158,6 +158,7 @@ async function runSearch(input: z.infer<typeof Body>, emit: Emit): Promise<Searc
 
   const warnings: string[] = [];
   const sources: string[] = [];
+  const query = shopQuery(product);
   const jobs: { label: string; cc: string | null; run: Promise<Offer[]> }[] = [];
   if (hasFeeds()) {
     sources.push("Partner shops");
@@ -165,11 +166,11 @@ async function runSearch(input: z.infer<typeof Body>, emit: Emit): Promise<Searc
   }
   if (hasShopping()) {
     sources.push("Google Shopping");
-    for (const cc of countries) jobs.push({ label: `Google Shopping ${cc.toUpperCase()}`, cc: cc.toUpperCase(), run: searchCountry(product.searchQuery, cc) });
+    for (const cc of countries) jobs.push({ label: `Google Shopping ${cc.toUpperCase()}`, cc: cc.toUpperCase(), run: searchCountry(query, cc) });
   }
   if (hasEbay()) {
     sources.push("eBay");
-    for (const cc of ebayMarkets(countries)) jobs.push({ label: `eBay ${cc.toUpperCase()}`, cc: cc.toUpperCase(), run: searchEbay(product.searchQuery, cc, home) });
+    for (const cc of ebayMarkets(countries)) jobs.push({ label: `eBay ${cc.toUpperCase()}`, cc: cc.toUpperCase(), run: searchEbay(query, cc, home) });
   }
   if (hasShopify()) {
     sources.push("Independent shops");
@@ -247,7 +248,7 @@ async function runSearch(input: z.infer<typeof Body>, emit: Emit): Promise<Searc
   }
   if (!checked && offers.length) {
     const strong = offers.filter((o) => o.strong).map((o) => ({ ...o, match: "exact" as const }));
-    offers = dedupe([...strong, ...keywordFilter(offers.filter((o) => !o.strong), product.searchQuery)]);
+    offers = dedupe([...strong, ...offers.filter((o) => !o.strong && keywordMatch(o.title, product))]);
     warnings.push(
       provider
         ? "The exact-match check didn't work this time, so a few results may be similar items."
@@ -282,8 +283,9 @@ async function runSearch(input: z.infer<typeof Body>, emit: Emit): Promise<Searc
       const verdicts = await verifyOffers(image, describe(product), pool);
       // Photos confirm; an article code in the title also counts as confirmed; a full model name counts
       // unless the photo is clearly another product; a photo we couldn't load keeps the title verdict.
+      // A title already judged "exact" stays unless the photo shows a clearly different product.
       const keep = (o: Offer, v: string) =>
-        v === "same" || o.strong === "code" || (o.strong === "model" && v !== "different") || (v === "unchecked" && o.match === "exact");
+        v === "same" || o.strong === "code" || (v !== "different" && (o.strong === "model" || o.match === "exact"));
       offers = pool.filter((o, i) => keep(o, verdicts[i])).map((o) => ({ ...o, seen: verdicts[pool.indexOf(o)] === "same", match: "exact" as const }));
       similar = pool.filter((o, i) => !keep(o, verdicts[i]) && (verdicts[i] === "similar" || verdicts[i] === "unchecked")).map((o) => ({ ...o, match: "likely" as const }));
       // Offers beyond the 32 checked keep their title verdict.

@@ -6,6 +6,8 @@ type Dict = Record<string, string[]>;
 
 // Order matters: more specific kinds first (shorts before trousers, hoodie before sweater).
 const KINDS: Dict = {
+  // Football/sports shirts: listed as shirt, jersey, trikot, maillot, maglia, camiseta... all the same thing.
+  jersey: ["jersey", "trikot", "heimtrikot", "auswartstrikot", "auswärtstrikot", "fussballtrikot", "fußballtrikot", "maillot", "maglia", "thuisshirt", "uitshirt", "voetbalshirt", "football shirt", "soccer jersey", "home shirt", "away shirt", "third shirt", "camiseta de futbol", "camiseta futbol", "camiseta 1", "koszulka meczowa", "matchtrøje", "fotbollströja", "kit "],
   shorts: ["shorts", "short ", "bermuda", "korte broek", "pantalon corto", "pantalón corto", "pantaloncini", "kurze hose", "pantaloncino", "spodenki", "pantalones cortos"],
   jeans: ["jeans", "denim", "spijkerbroek", "vaqueros", "vaquero"],
   trousers: ["trousers", "pants", "pant ", "chino", "broek", "hose", "pantalon", "pantalón", "pantalone", "pantaloni", "spodnie", "byxor", "bukser", "cargo", "jogger"],
@@ -33,6 +35,7 @@ const SAME_KIND: Record<string, string[]> = {
   coat: ["coat", "jacket"],
   sweater: ["sweater", "hoodie"],
   hoodie: ["hoodie", "sweater"],
+  jersey: ["jersey", "tshirt", "shirt"],
   shirt: ["shirt", "jacket"], // overshirts are often listed as shirt jackets
 };
 
@@ -104,8 +107,13 @@ export function contradicts(title: string, target: { brand: string; productType?
   const wantKind = kindOf(`${target.productType ?? ""} ${stripBrand(target.model ?? "", target.brand)}`);
   if (wantKind) {
     const got = kindOf(t);
-    if (got && !(SAME_KIND[wantKind] ?? [wantKind]).includes(got)) return true;
+    // "jersey" is also a fabric (jersey dress, jersey trousers): only a kind when we're looking for a sports shirt.
+    if (got && got !== "jersey" && !(SAME_KIND[wantKind] ?? [wantKind]).includes(got)) return true;
+    if (got === "jersey" && ["shirt", "tshirt"].includes(wantKind) === false && wantKind !== "jersey" && /\b(trikot|maillot|thuisshirt|uitshirt|voetbalshirt|football shirt|home shirt|away shirt)\b/i.test(t)) return true;
   }
+  // Kids' versions are a different (cheaper) product, unless the shopper is looking for one.
+  const KIDS = /\b(kids?|junior|juniors|youth|toddler|baby|infant|enfant|kinder|kinderen|niños?|nino|bambin[oi]|dziec|barn|jongens|meisjes|jr)\b/i;
+  if (KIDS.test(t) && !KIDS.test(`${target.model ?? ""} ${target.productType ?? ""}`)) return true;
   const wantCols = target.colour && target.colour !== "not specified" ? coloursOf(target.colour) : [];
   if (wantCols.length) {
     const ok = new Set(wantCols.flatMap((c) => COMPATIBLE[c] ?? [c]));
