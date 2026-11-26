@@ -52,14 +52,13 @@ export default function LiveSearch({ live, note }: { live: Live; note: string | 
   const tried = new Set(live.tried ?? []);
   const hit = new Set(live.done);
   const answered = live.countries.filter((c) => tried.has(c)).length;
-  const shopCount = new Set(live.shops.map((s) => s.shop)).size;
 
   return (
     <div className="live" role="status" ref={box}>
       <div className="live-top">
         <div className="counter">
           <b>{live.found}</b>
-          <span>offers found{secs > 2 ? ` · ${secs}s` : ""}</span>
+          <span>listings to check{secs > 2 ? ` · ${secs}s` : ""}</span>
         </div>
         <ol className="steps-live">
           {STEPS.map((s) => (
@@ -83,25 +82,10 @@ export default function LiveSearch({ live, note }: { live: Live; note: string | 
         </div>
       )}
 
-      {live.shops.length > 0 && (
-        <>
-          <p className="muted">Just found{shopCount > 1 ? ` · ${shopCount} shops so far` : ""}</p>
-          <ul className="ticker">
-            {live.shops.map((s) => (
-              <li key={s.key ?? s.shop + s.total}>
-                <span className="tpic">
-                  {s.thumbnail ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={s.thumbnail} alt="" referrerPolicy="no-referrer" />
-                  ) : null}
-                </span>
-                <span className="tshop">{s.shop}</span>
-                <b>€{s.total.toFixed(2)}</b>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+      <p className="muted">
+        {answered > 0 ? `${answered} of ${live.countries.length} countries answered. ` : ""}
+        Results appear once every offer has passed our checks for the exact model, colour and season.
+      </p>
       <p className="tip" key={tip}>{TIPS[tip]}</p>
     </div>
   );

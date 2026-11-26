@@ -52,6 +52,7 @@ const COLOURS: Dict = {
   pink: ["pink", "roze", "rosa", "rose ", "różow"],
   yellow: ["yellow", "geel", "gelb", "giallo", "jaune", "amarillo", "żółt", "mustard"],
   orange: ["orange", "oranje", "arancione", "naranja", "pomarańcz"],
+  multi: ["two tone", "two-tone", "twotone", "bicolor", "bicolour", "bicolore", "multicolor", "multicolour", "multicolore", "tie dye", "tie-dye", "camo", "camouflage"],
   purple: ["purple", "paars", "lila", "viola", "violet", "morado", "fiolet"],
 };
 
@@ -65,7 +66,39 @@ const COMPATIBLE: Record<string, string[]> = {
   black: ["black"],
   red: ["red", "pink"],
   pink: ["pink", "red"],
+  multi: ["multi"],
 };
+
+// Colour words that are part of the product's name ("Boston Red Sox", "Blue Jays", "Black Panther")
+// say nothing about the item's colour: remove that phrase from titles before checking colour.
+function nameColourPhrases(target: { brand: string; model?: string }): string[] {
+  const words = norm(`${target.brand} ${target.model ?? ""}`).trim().split(" ");
+  const all = Object.values(COLOURS).flat().map((w) => norm(w).trim());
+  const out: string[] = [];
+  words.forEach((w, i) => {
+    if (all.some((c) => c && (w === c || w.startsWith(c)) && c.length > 2)) out.push(words.slice(i, i + 2).join(" "));
+  });
+  return out;
+}
+export function withoutNameColours(title: string, target: { brand: string; model?: string }): string {
+  let t = norm(title);
+  for (const p of nameColourPhrases(target)) t = t.split(` ${p} `).join(" ");
+  return t;
+}
+
+// The colours the shopper wants (the item's own colour, not its name), e.g. "navy" for a navy Red Sox cap.
+export function wantedColours(target: { brand: string; model?: string; colour?: string }): string[] {
+  if (!target.colour || target.colour === "not specified") return [];
+  return coloursOf(withoutNameColours(target.colour, target));
+}
+
+// True when the title names a colour that matches the wanted colour (not just "no contradiction").
+export function colourConfirmed(title: string, target: { brand: string; model?: string; colour?: string }): boolean {
+  const want = wantedColours(target);
+  if (!want.length) return true;
+  const ok = new Set(want.flatMap((c) => COMPATIBLE[c] ?? [c]));
+  return coloursOf(withoutNameColours(title, target)).some((c) => ok.has(c));
+}
 
 const norm = (t: string) => ` ${t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9ąćęłńóśźżß\s-]/g, " ").replace(/\s+/g, " ")} `;
 
@@ -114,10 +147,10 @@ export function contradicts(title: string, target: { brand: string; productType?
   // Kids' versions are a different (cheaper) product, unless the shopper is looking for one.
   const KIDS = /\b(kids?|junior|juniors|youth|toddler|baby|infant|enfant|kinder|kinderen|niños?|nino|bambin[oi]|dziec|barn|jongens|meisjes|jr)\b/i;
   if (KIDS.test(t) && !KIDS.test(`${target.model ?? ""} ${target.productType ?? ""}`)) return true;
-  const wantCols = target.colour && target.colour !== "not specified" ? coloursOf(target.colour) : [];
+  const wantCols = wantedColours(target);
   if (wantCols.length) {
     const ok = new Set(wantCols.flatMap((c) => COMPATIBLE[c] ?? [c]));
-    const got = coloursOf(t);
+    const got = coloursOf(withoutNameColours(t, target));
     if (got.length && !got.some((c) => ok.has(c))) return true;
   }
   return false;

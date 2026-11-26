@@ -1,7 +1,7 @@
 // Strong text evidence that a listing is the shopper's exact product:
 // - "code": the manufacturer's article/style code appears in the title (e.g. I029919)
 // - "model": every word of the model name appears (e.g. "Flint Pant") and nothing contradicts kind or colour
-import { coloursOf, contradicts, kindOf } from "./attributes";
+import { colourConfirmed, coloursOf, contradicts, kindOf } from "./attributes";
 import type { Product } from "./types";
 
 const norm = (t: string) => t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -30,8 +30,9 @@ export function strongMatch(title: string, product: Product): "code" | "model" |
   if (codes.some((c) => t.includes(c))) return "code";
   const words = modelWords(product);
   const n = norm(title);
-  const brandOk = norm(product.brand).split(/\s+/).filter((w) => w.length > 1).every((w) => n.includes(w));
-  if (words.length && brandOk && words.every((w) => n.includes(w)) && !contradicts(title, product)) return "model";
+  const brandOk = norm(product.brand).split(/[^a-z0-9]+/).filter((w) => w.length > 1).every((w) => n.includes(w));
+  // A model name only counts when the colour is confirmed too (same model in another colourway is another product).
+  if (words.length && brandOk && words.every((w) => n.includes(w)) && !contradicts(title, product) && colourConfirmed(title, product)) return "model";
   return null;
 }
 

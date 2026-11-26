@@ -61,7 +61,8 @@ ${list}`;
 
 export const VERIFY_PROMPT = `You check shop listings for a price-comparison site. The first image is the product the shopper wants.
 Each following image is a shop's product photo. Compare each one with the first image and answer:
-- "same": the same product: same item type, same cut and silhouette, same colour, same details (hood or collar, pockets, padding, closures, logo placement). Different photo angle or background is fine.
+- "same": the same product in the same colourway: same item type, cut and silhouette, and EVERY main colour matches (e.g. for a cap: crown, visor and logo colours; for shoes: upper, sole and logo). Same details (hood or collar, pockets, padding, closures, logo placement and size). Different photo angle, lighting or background is fine.
+- A two-tone version of a single-colour item, a different visor or sole colour, or a different logo colour is NOT the same.
 - "similar": same brand and same kind of item, but a different model, colour or details.
 - "different": anything else, or the photo is unclear.
 Be strict. When in doubt, choose "similar", not "same". A wrong "same" sends the shopper to the wrong product.`;

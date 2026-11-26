@@ -302,9 +302,10 @@ async function runSearch(input: z.infer<typeof Body>, emit: Emit): Promise<Searc
       const verdicts = await verifyOffers(image, describe(product), pool);
       // Photos confirm; an article code in the title also counts as confirmed; a full model name counts
       // unless the photo is clearly another product; a photo we couldn't load keeps the title verdict.
-      // A title already judged "exact" stays unless the photo shows a clearly different product.
+      // Results need the photo to say "same". Exceptions: the article code is in the title; or the full model
+      // name AND the colour are in the title and the photo is close ("similar"); or the photo couldn't be loaded.
       const keep = (o: Offer, v: string) =>
-        v === "same" || o.strong === "code" || (v !== "different" && (o.strong === "model" || o.match === "exact"));
+        v === "same" || o.strong === "code" || (v === "similar" && o.strong === "model") || (v === "unchecked" && o.match === "exact");
       offers = pool.filter((o, i) => keep(o, verdicts[i])).map((o) => ({ ...o, seen: verdicts[pool.indexOf(o)] === "same", match: "exact" as const }));
       similar = pool.filter((o, i) => !keep(o, verdicts[i]) && (verdicts[i] === "similar" || verdicts[i] === "unchecked")).map((o) => ({ ...o, match: "likely" as const }));
       // Offers beyond the 32 checked keep their title verdict.

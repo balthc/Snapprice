@@ -5,8 +5,8 @@
 //    score between each result photo and the screenshot. The model (~90 MB) downloads once, then is cached.
 
 const MODEL = "Marqo/marqo-fashionCLIP";
-export const COLOUR_MAX_DIFF = 32; // colour difference (ΔE) above this = other colour
-export const LOOK_MIN = 0.72; // FashionCLIP similarity below this = other item
+export const COLOUR_MAX_DIFF = 26; // colourway difference (weighted ΔE over the 2 main colours) above this = other colourway
+export const LOOK_MIN = 0.78; // FashionCLIP similarity below this = other item
 
 export const proxied = (url: string) => `/api/img?u=${encodeURIComponent(url)}`;
 
@@ -21,7 +21,7 @@ function loadImg(src: string): Promise<HTMLImageElement> {
 }
 
 // --- colour -----------------------------------------------------------------
-function toLab(r: number, g: number, b: number): [number, number, number] {
+export function toLab(r: number, g: number, b: number): [number, number, number] {
   const lin = (c: number) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
   const [R, G, B] = [lin(r), lin(g), lin(b)];
   const x = (R * 0.4124 + G * 0.3576 + B * 0.1805) / 0.95047;
@@ -32,7 +32,46 @@ function toLab(r: number, g: number, b: number): [number, number, number] {
 }
 
 // Main colour of the product: ignores the background (estimated from the photo's edges).
-export function productColour(img: HTMLImageElement): [number, number, number] | null {
+type Lab = [number, number, number];
+export type Palette = { lab: Lab; w: number }[];
+
+// The product's colourway: its two main colours with their share (e.g. navy crown 70% + red visor 30%).
+export function productPalette(img: HTMLImageElement): Palette | null {
+  const labs = foregroundLabs(img);
+  if (!labs) return null;
+  // 2-means clustering, starting from the darkest and lightest pixels.
+  const byL = [...labs].sort((a, b) => a[0] - b[0]);
+  let c: Lab[] = [byL[Math.floor(byL.length * 0.1)], byL[Math.floor(byL.length * 0.9)]];
+  let groups: Lab[][] = [[], []];
+  for (let it = 0; it < 8; it++) {
+    groups = [[], []];
+    for (const p of labs) groups[colourDiff(p, c[0]) <= colourDiff(p, c[1]) ? 0 : 1].push(p);
+    c = groups.map((g, k) => (g.length ? ([0, 1, 2].map((i) => g.reduce((s, p) => s + p[i], 0) / g.length) as Lab) : c[k]));
+  }
+  const total = labs.length;
+  const pal = groups.map((g, k) => ({ lab: c[k], w: g.length / total })).filter((x) => x.w > 0);
+  // One colour really: merge when both clusters are nearly the same colour.
+  if (pal.length === 2 && colourDiff(pal[0].lab, pal[1].lab) < 12) return [{ lab: pal[0].w >= pal[1].w ? pal[0].lab : pal[1].lab, w: 1 }];
+  return pal;
+}
+
+// How different two colourways are: every colour that makes up at least 20% of one product must be
+// found in the other. A navy cap vs a cream/black cap, or vs a navy cap with a red visor, scores high.
+export function paletteDiff(a: Palette, b: Palette): number {
+  const one = (x: Palette, y: Palette) => {
+    let sum = 0;
+    let wsum = 0;
+    for (const p of x) {
+      if (p.w < 0.2) continue;
+      sum += p.w * Math.min(...y.map((q) => colourDiff(p.lab, q.lab)));
+      wsum += p.w;
+    }
+    return wsum ? sum / wsum : 0;
+  };
+  return Math.max(one(a, b), one(b, a));
+}
+
+function foregroundLabs(img: HTMLImageElement): Lab[] | null {
   const S = 64;
   const c = document.createElement("canvas");
   c.width = S;
@@ -58,7 +97,15 @@ export function productColour(img: HTMLImageElement): [number, number, number] |
   let labs = fg.map((p) => toLab(p[0], p[1], p[2]));
   // Ignore light, colourless pixels (white/grey photo backdrops and cards), unless that is all there is.
   const coloured = labs.filter(([L, a, b]) => !(L > 75 && Math.hypot(a, b) < 10));
-  if (coloured.length >= 40) labs = coloured;
+  if (coloured.length >= 40 && coloured.length > labs.length * 0.35) labs = coloured;
+  return labs;
+}
+
+// Main colour of the product (kept for simple uses).
+export function productColour(img: HTMLImageElement): [number, number, number] | null {
+  const labs = foregroundLabs(img);
+  if (!labs) return null;
+  const med = (xs: number[]) => xs.sort((a, b) => a - b)[Math.floor(xs.length / 2)];
   return [0, 1, 2].map((k) => med(labs.map((l) => l[k]))) as [number, number, number];
 }
 
@@ -91,12 +138,12 @@ export function loadLookModel(): Promise<Embedder> {
 
 const cosine = (a: Float32Array, b: Float32Array) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
 
-export type PhotoScore = { colour: number | null; look: number | null; pass: boolean };
+export type PhotoScore = { colour: number | null; look: number | null; pass: boolean; confirmed: boolean };
 
 // Scores every result photo against the screenshot. Photos that can't be loaded get pass=true with no scores.
 export async function scorePhotos(refSrc: string, photos: (string | null)[], useLook: boolean, onProgress?: (done: number) => void): Promise<PhotoScore[]> {
   const ref = await loadImg(refSrc);
-  const refCol = productColour(ref);
+  const refPal = productPalette(ref);
   let embed: Embedder | null = null;
   let refEmb: Float32Array | null = null;
   if (useLook) {
@@ -117,15 +164,16 @@ export async function scorePhotos(refSrc: string, photos: (string | null)[], use
       const src = proxied(p);
       try {
         const img = await loadImg(src);
-        const col = productColour(img);
-        if (refCol && col) colour = colourDiff(refCol, col);
+        const pal = productPalette(img);
+        if (refPal && pal) colour = paletteDiff(refPal, pal);
         if (embed && refEmb) look = cosine(refEmb, await embed(src));
       } catch {
         /* photo unavailable */
       }
     }
     const pass = (colour === null || colour <= COLOUR_MAX_DIFF) && (look === null || look >= LOOK_MIN);
-    out.push({ colour, look, pass });
+    // "Photo match" only when both checks ran and passed.
+    out.push({ colour, look, pass, confirmed: pass && colour !== null && look !== null });
     onProgress?.(++done);
   }
   return out;

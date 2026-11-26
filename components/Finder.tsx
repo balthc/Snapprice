@@ -221,7 +221,7 @@ export default function Finder() {
   // Free in-browser photo check (colour + FashionCLIP): photos that clearly don't match move to "similar".
   // Listings with the article code or full model name in their title are trusted and not demoted.
   async function photoCheck(data: SearchResult, image: { data: string; mime: string }): Promise<SearchResult> {
-    const list = data.offers.slice(0, 30).filter((o) => !o.strong);
+    const list = data.offers.slice(0, 30).filter((o) => o.strong !== "code");
     const rest = data.offers.filter((o) => !list.includes(o));
     if (!list.length) return data;
     const saveData = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
@@ -233,14 +233,12 @@ export default function Finder() {
       setCheckNote(null);
       const lookRan = scores.some((sc) => sc.look !== null);
       const checks = { textCheck: data.checks?.textCheck ?? null, photoCheck: lookRan ? "FashionCLIP + colour (in your browser)" : "colour only (in your browser)" };
-      // If every photo "fails", the screenshot itself is probably the problem (model, background, crop): don't trust the check.
-      if (scores.every((sc) => !sc.pass)) return { ...data, checks };
       const keep: Offer[] = [];
       const moved: Offer[] = [];
       list.forEach((o, i) => {
         const sc = scores[i];
         if (!sc.pass) moved.push({ ...o, match: "likely" });
-        else keep.push(sc.look !== null || sc.colour !== null ? { ...o, seen: true } : o);
+        else keep.push(sc.confirmed ? { ...o, seen: true } : o);
       });
       const offers = [...keep, ...rest].sort((a, b) => a.total - b.total);
       return { ...data, offers, similar: [...moved, ...data.similar].sort((a, b) => a.total - b.total), visualCheck: true, checks };
