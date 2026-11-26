@@ -8,7 +8,8 @@ import { contradicts } from "@/lib/attributes";
 import { describe } from "@/lib/prompts";
 import { checkStock } from "@/lib/stock";
 import { verifyOffers } from "@/lib/verify";
-import { dedupe, hasSerpApi, keywordFilter, searchCountry } from "@/lib/shopping";
+import { hasFeeds, searchFeeds } from "@/lib/feeds";
+import { activeProviders, dedupe, hasShopping, keywordFilter, searchCountry } from "@/lib/shopping";
 import type { Offer, SearchResult } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -74,7 +75,7 @@ export async function POST(req: Request) {
   const countries = [...new Set(picked.length ? picked : searchCountries())].slice(0, maxCountries());
   const home = homeCountry();
 
-  if (!hasSerpApi() && !hasEbay()) {
+  if (!hasShopping() && !hasEbay() && !hasFeeds()) {
     await new Promise((r) => setTimeout(r, 1200));
     const result: SearchResult = {
       offers: mockOffers(),
@@ -92,7 +93,11 @@ export async function POST(req: Request) {
   const warnings: string[] = [];
   const sources: string[] = [];
   const jobs: { label: string; run: Promise<Offer[]> }[] = [];
-  if (hasSerpApi()) {
+  if (hasFeeds()) {
+    sources.push("Partner shops");
+    jobs.push({ label: "partner shop feeds", run: searchFeeds(product, countries) });
+  }
+  if (hasShopping()) {
     sources.push("Google Shopping");
     for (const cc of countries) jobs.push({ label: `Google Shopping ${cc.toUpperCase()}`, run: searchCountry(product.searchQuery, cc) });
   }
@@ -104,13 +109,21 @@ export async function POST(req: Request) {
 
   const settled = await Promise.allSettled(jobs.map((j) => j.run));
   let offers: Offer[] = [...lensOffers];
+  const failed: string[] = [];
   settled.forEach((s, i) => {
     if (s.status === "fulfilled") offers.push(...s.value);
     else {
-      console.error(s.reason);
-      warnings.push(`Could not check ${jobs[i].label} this time.`);
+      console.error(jobs[i].label, s.reason);
+      failed.push(jobs[i].label.replace("Google Shopping ", ""));
     }
   });
+  if (failed.length) {
+    warnings.push(
+      failed.length === jobs.length
+        ? `The price services didn't answer this time${activeProviders().length ? " (their free allowance may be used up)" : ""}. Please try again later.`
+        : `Couldn't check: ${failed.join(", ")}.`
+    );
+  }
 
   // Hard filters (free, always on): drop listings whose title names another kind of item or another colour.
   offers = offers.filter((o) => !contradicts(o.title, product));

@@ -2,7 +2,7 @@
 
 export const STEPS: [string, string][] = [
   ["Drop a screenshot", "From any webshop, Instagram or a photo. Or just type the product name, with colour and size if you like."],
-  ["We recognise the exact item", "Brand, model and colour, then we check shops across Europe at once: you choose which of 28 countries."],
+  ["We recognise the exact item", "Brand, model and colour, then we check shops in 28 European countries at once."],
   ["Buy where it's cheapest", "Only shops that have it in stock, ranked by price with shipping. One click takes you to the product page."],
 ];
 

@@ -13,7 +13,7 @@ export type Product = {
 };
 
 export type Offer = {
-  source: "google" | "lens" | "ebay" | "demo";
+  source: "google" | "lens" | "ebay" | "feed" | "demo";
   country: string; // ISO code of the shop / marketplace, e.g. "IT"
   shop: string;
   title: string;

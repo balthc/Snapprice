@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { aiProvider } from "@/lib/ai";
 import { hasEbay } from "@/lib/ebay";
 import { COUNTRIES, homeCountry, maxCountries, searchCountries } from "@/lib/countries";
-import { hasSerpApi } from "@/lib/shopping";
+import { hasFeeds } from "@/lib/feeds";
+import { activeProviders, hasSerpApi, hasShopping } from "@/lib/shopping";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,9 +12,11 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   return NextResponse.json(
     {
-      livePrices: hasSerpApi() || hasEbay(),
+      livePrices: hasShopping() || hasEbay() || hasFeeds(),
       recognition: hasSerpApi() || aiProvider() !== null,
-      sources: [hasSerpApi() && "Google Shopping", hasEbay() && "eBay"].filter(Boolean),
+      feeds: hasFeeds(),
+      sources: [hasFeeds() && "Partner shop feeds", hasShopping() && "Google Shopping", hasEbay() && "eBay"].filter(Boolean),
+      priceProviders: activeProviders(),
       recogniser: aiProvider() ?? (hasSerpApi() ? "google-lens" : null),
       matchCheck: aiProvider(),
       countries: searchCountries().map((c) => c.toUpperCase()),

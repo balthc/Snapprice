@@ -18,6 +18,9 @@ Without any keys the site runs in **demo mode** with sample results.
 | Key | What it adds | Cost |
 |---|---|---|
 | `SERPAPI_API_KEY` | Google Shopping prices, Google Lens recognition, direct shop links | Free plan: limited searches per month. Each typed search uses 1 per country (6 by default), a screenshot uses 1 more, and opening a Google Shopping result uses 1 (repeat clicks are free while cached). |
+| `SERPER_API_KEY` | Backup Google Shopping provider, takes over when SerpApi runs out | 2,500 free searches once (no card) |
+| `SEARCHAPI_API_KEY` | Second backup Google Shopping provider | Free starter searches once |
+| `DATABASE_URL` + feeds | Partner shop feeds (Awin, Daisycon, TradeTracker): unlimited searches, direct links, stock, sizes, commission per sale | Free (Supabase or Neon free database, GitHub Actions) |
 | `GEMINI_API_KEY` | Smarter recognition (reads brand, model, colour, code) and the exact-match check | Free tier, no card. Google may use free-tier data to improve its products. |
 | `EBAY_CLIENT_ID` + `EBAY_CLIENT_SECRET` | eBay offers from 9 EU countries, with shipping to your country | Free (5,000 calls a day). |
 | `ANTHROPIC_API_KEY` | Claude instead of Gemini, usually the most accurate | Paid, a few cents per search. Optional. |
@@ -56,6 +59,33 @@ Cost: one user search uses one SerpApi search **per country** (so 6 by default).
 3. Copy the **App ID (Client ID)** and **Cert ID (Client Secret)**.
 4. Add them in Vercel as `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET`.
 
+### Backup price keys: Serper and SearchAPI (free, recommended)
+
+Every country searched uses one search from a price provider, and all 28 countries are searched by default. When one provider's free allowance runs out, the site automatically moves on to the next one.
+
+1. **Serper**: sign up at **https://serper.dev** (no card), copy the API key, add it in Vercel as `SERPER_API_KEY`.
+2. **SearchAPI**: sign up at **https://www.searchapi.io**, copy the API key, add it as `SEARCHAPI_API_KEY`.
+
+Use one account per provider. Opening several accounts at the same provider breaks their terms.
+
+### Unlimited and free: partner shop feeds (the long-term route)
+
+Affiliate networks give approved websites free daily product files ("feeds") from thousands of European shops, including Zalando, de Bijenkorf, About You, Bol and many more, with prices, stock, sizes and direct links. You also earn a commission when someone buys. Searches in your own database cost nothing, however many there are.
+
+1. **Free database**: sign up at **https://supabase.com** (or https://neon.tech), create a project, open the **SQL editor**, paste the contents of `db/schema.sql` from this repository and click **Run**.
+2. Copy the database **connection string** (Supabase: Project Settings → Database → Connection string → URI, use the "Session pooler" one) and add it in Vercel as `DATABASE_URL`.
+3. **Sign up as a publisher** (free) at the networks, with your live site as your website:
+   - Awin: https://www.awin.com (Zalando, About You, many big EU brands)
+   - Daisycon: https://www.daisycon.com (strong in NL and BE)
+   - TradeTracker: https://www.tradetracker.com (de Bijenkorf and many Dutch shops)
+   Then apply to the shops (called "advertisers" or "programmes") you want. Each shop approves you separately.
+4. For each approved shop, copy its **product feed URL** (Awin: Toolbox → Create-a-Feed; Daisycon: Material → Product feeds; TradeTracker: Material → Product feeds). Choose CSV.
+5. In GitHub, open this repository → **Settings → Secrets and variables → Actions** and add two secrets:
+   - `DATABASE_URL`: the same connection string as in Vercel.
+   - `FEEDS`: a list of your feeds, for example
+     `[{"name":"awin-zalando-nl","network":"awin","merchant":"Zalando","country":"NL","url":"PASTE-FEED-URL"}]`
+6. Open the **Actions** tab → **Import product feeds** → **Run workflow**. After that it runs every night by itself.
+
 ### Optional paid key: Claude, instead of Gemini
 
 1. Go to **https://platform.claude.com** and create an account.
@@ -76,8 +106,8 @@ Now the site recognises real screenshots and shows live prices. Keep the keys se
 
 | Name | What it does | Default |
 |---|---|---|
-| `SEARCH_COUNTRIES` | Default countries (shoppers can change them on the page). Options: nl, be, de, fr, it, es, at, lu, pt, ie, fi, gr, sk, si, hr, ee, lv, lt, pl, cz, hu, ro, bg, dk, se, uk, ch, no | `nl,de,be,fr,it,es` |
-| `MAX_COUNTRIES_PER_SEARCH` | Most countries one search may use (each = 1 SerpApi search) | `12` |
+| `SEARCH_COUNTRIES` | Countries to search (default: all 28). Options: nl, be, de, fr, it, es, at, lu, pt, ie, fi, gr, sk, si, hr, ee, lv, lt, pl, cz, hu, ro, bg, dk, se, uk, ch, no | `nl,de,be,fr,it,es` |
+| `MAX_COUNTRIES_PER_SEARCH` | Optional safety limit on countries per search | all |
 | `HOME_COUNTRY` | The shopper's country, used for the "you save" comparison | `nl` |
 | `CLAUDE_MODEL` | Which Claude model is used | `claude-opus-5-5` |
 | `NEXT_PUBLIC_ENFORCE_FREE_LIMIT` | Set to `true` to block searches after the 5 free ones a month | off |

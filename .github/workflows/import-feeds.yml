@@ -1,0 +1,23 @@
+name: Import product feeds
+
+# Every night at 03:00 UTC, and whenever you press "Run workflow" on GitHub (Actions tab).
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/import-feeds.mjs
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          FEEDS: ${{ secrets.FEEDS }}

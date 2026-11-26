@@ -13,3 +13,6 @@ export const anthropicKey = () => read("ANTHROPIC_API_KEY", "CLAUDE_API_KEY", "A
 export const geminiKey = () => read("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_AI_API_KEY");
 export const ebayClientId = () => read("EBAY_CLIENT_ID", "EBAY_APP_ID");
 export const ebayClientSecret = () => read("EBAY_CLIENT_SECRET", "EBAY_CERT_ID");
+export const serperKey = () => read("SERPER_API_KEY", "SERPER_KEY");
+export const searchApiKey = () => read("SEARCHAPI_API_KEY", "SEARCHAPI_KEY", "SEARCH_API_KEY");
+export const databaseUrl = () => read("DATABASE_URL", "POSTGRES_URL", "SUPABASE_DB_URL");

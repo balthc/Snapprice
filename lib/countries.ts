@@ -33,19 +33,19 @@ export const COUNTRIES: Record<string, Country> = {
   no: { name: "Norway", domain: "google.no", hl: "no", currency: "NOK", eu: false },
 };
 
-// Countries searched when the shopper doesn't choose (each costs 1 SerpApi search).
+// Countries searched (each costs 1 search on the price provider). Default: all of them.
 export function searchCountries(): string[] {
-  const raw = process.env.SEARCH_COUNTRIES || "nl,de,be,fr,it,es";
+  const raw = process.env.SEARCH_COUNTRIES || Object.keys(COUNTRIES).join(",");
   return raw
     .split(",")
     .map((c) => c.trim().toLowerCase())
     .filter((c) => c in COUNTRIES);
 }
 
-// Most countries one search may use, to protect the free SerpApi plan.
+// Most countries one search may use (optional safety limit).
 export function maxCountries(): number {
   const n = parseInt(process.env.MAX_COUNTRIES_PER_SEARCH || "", 10);
-  return Number.isFinite(n) && n > 0 ? n : 12;
+  return Number.isFinite(n) && n > 0 ? n : Object.keys(COUNTRIES).length;
 }
 
 export function homeCountry(): string {
