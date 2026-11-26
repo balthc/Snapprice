@@ -52,6 +52,15 @@ async function shrink(file: File): Promise<Blob> {
   return file;
 }
 
+function toBase64(blob: Blob): Promise<string> {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(",")[1] ?? "");
+    r.onerror = rej;
+    r.readAsDataURL(blob);
+  });
+}
+
 export default function Finder() {
   const [stage, setStage] = useState<Stage>("idle");
   const [preview, setPreview] = useState<string | null>(null);
@@ -63,6 +72,8 @@ export default function Finder() {
   const [colour, setColour] = useState("");
   const [size, setSize] = useState("");
   const [lens, setLens] = useState<Offer[]>([]);
+  const [shot, setShot] = useState<{ data: string; mime: string } | null>(null);
+  const [showSimilar, setShowSimilar] = useState(false);
   const [recognisedBy, setRecognisedBy] = useState<string | null>(null);
   const [over, setOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -91,8 +102,9 @@ export default function Finder() {
     return { ...p, colour: c, searchQuery: `${p.searchQuery} ${c}` };
   }
 
-  async function search(p: Product, lensFound: Offer[] = lens) {
+  async function search(p: Product, lensFound: Offer[] = lens, image = shot) {
     if (blocked) return;
+    setShowSimilar(false);
     setStage("searching");
     setError(null);
     setResult(null);
@@ -100,7 +112,7 @@ export default function Finder() {
       const res = await fetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ product: p, size: size.trim() || undefined, lensOffers: lensFound }),
+        body: JSON.stringify({ product: p, size: size.trim() || undefined, lensOffers: lensFound, image: image ?? undefined }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Search failed.");
@@ -129,6 +141,10 @@ export default function Finder() {
     try {
       const form = new FormData();
       const blob = await shrink(file);
+      const img = ["image/jpeg", "image/png", "image/webp"].includes(blob.type) && blob.size < 700_000
+        ? { data: await toBase64(blob), mime: blob.type }
+        : null;
+      setShot(img);
       form.append("image", blob, blob === file ? file.name : "screenshot.jpg");
       const res = await fetch("/api/identify", { method: "POST", body: form });
       const data = await res.json();
@@ -139,7 +155,7 @@ export default function Finder() {
       setRecognisedBy(data.recognisedBy ?? null);
       if (data.demo) setDemo(true);
       setStage("identified");
-      await search(p, data.lensOffers ?? []);
+      await search(p, data.lensOffers ?? [], img);
     } catch (e) {
       setError((e as Error).message);
       setStage("idle");
@@ -163,9 +179,10 @@ export default function Finder() {
     const full = withColour(p);
     setPreview(null);
     setLens([]);
+    setShot(null);
     setRecognisedBy(null);
     setProduct(full);
-    search(full, []);
+    search(full, [], null);
   }
 
   function edit(field: keyof Product, value: string) {
@@ -254,7 +271,7 @@ export default function Finder() {
                 <p className="err"><b>Sample results, not real shops.</b> Live prices switch on once a SerpApi key is added.</p>
               )}
               <div className="res-head">
-                <h2>{offers.length ? `${offers.length} ${offers.length === 1 ? "offer" : "offers"} in stock` : "Nothing in stock found"}</h2>
+                <h2>{offers.length ? `${offers.length} ${offers.length === 1 ? "shop has" : "shops have"} this exact item` : "No exact match found"}</h2>
                 <p className="muted">Cheapest first, shipping included · {result.countries.join(" ")}</p>
               </div>
               {saving && saving > 1 && (
@@ -268,7 +285,27 @@ export default function Finder() {
                   {offers.map((o, i) => <Row key={o.url + i} o={o} best={i === 0} />)}
                 </ol>
               ) : (
-                <p className="muted">Try editing the search words above, for example remove the colour or add the model number.</p>
+                <p className="muted">
+                  We&apos;d rather show nothing than the wrong product. {result.similar.length ? "Below are similar items that didn't pass our check. " : ""}
+                  You can also edit the search words above, for example add the model name.
+                </p>
+              )}
+              {result.visualCheck && offers.length > 0 && (
+                <p className="note">Every result above was photo-checked against your screenshot.</p>
+              )}
+              {result.similar.length > 0 && (
+                showSimilar ? (
+                  <>
+                    <h3 style={{ marginTop: 8 }}>Similar, but not confirmed as the same item</h3>
+                    <ol className="rows similar">
+                      {result.similar.map((o, i) => <Row key={o.url + i} o={o} best={false} />)}
+                    </ol>
+                  </>
+                ) : (
+                  <button className="btn btn-ghost" type="button" onClick={() => setShowSimilar(true)}>
+                    Show {result.similar.length} similar {result.similar.length === 1 ? "item" : "items"} (different model, colour or not verified)
+                  </button>
+                )
               )}
               {result.warnings.map((w) => <p className="note" key={w}>{w}</p>)}
               <p className="note">
@@ -302,6 +339,7 @@ function Row({ o, best }: { o: Offer; best: boolean }) {
         <span className="t">{o.title}</span>
         <span className="tags">
           {best && <span className="tag green">Lowest price</span>}
+          {o.seen && <span className="tag green">Photo match</span>}
           {o.stock === "in" && <span className="tag green">In stock</span>}
           {off >= 5 && <span className="tag pink">-{off}%</span>}
           <span className="tag">{o.country}</span>

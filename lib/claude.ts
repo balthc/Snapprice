@@ -3,7 +3,7 @@ import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { Product } from "./types";
 import { anthropicKey } from "./env";
-import { IDENTIFY_PROMPT, classifyPrompt, identifyText } from "./prompts";
+import { IDENTIFY_PROMPT, VERIFY_PROMPT, classifyPrompt, identifyText } from "./prompts";
 
 export const hasClaude = () => Boolean(anthropicKey());
 const model = () => process.env.CLAUDE_MODEL || "claude-opus-5-5";
@@ -21,7 +21,9 @@ const ProductSchema = z.object({
   colour: z.string().describe("Colour name, the manufacturer's name if you can tell, e.g. 'Black rinsed'"),
   articleCode: z.string().nullable().describe("Manufacturer article/style code if visible or known with confidence, e.g. 'I031501'. null if unsure."),
   category: z.string().describe("Short category in English, e.g. 'trousers', 'sneakers', 'headphones'"),
-  searchQuery: z.string().describe("The best Google Shopping search query to find exactly this item: brand + model + colour (+ code if certain). No sizes, no filler words."),
+  productType: z.string().describe("Precise kind of item, e.g. 'hooded padded jacket', 'overshirt'"),
+  features: z.array(z.string()).describe("3 to 6 short visual details that set this item apart from the brand's other items"),
+  searchQuery: z.string().describe("Google Shopping query for exactly this item: brand + model/code if known, else brand + productType + colour + most telling feature. No sizes."),
   confidence: z.enum(["high", "medium", "low"]),
   notes: z.string().describe("One short sentence for the shopper: what you recognised, or what is unclear"),
 });
@@ -86,4 +88,35 @@ export async function classifyListings(product: Product, titles: string[]): Prom
   const out = new Map<number, "exact" | "likely" | "different">();
   for (const v of res.parsed_output?.verdicts ?? []) out.set(v.i, v.match);
   return out;
+}
+
+const VerifySchema = z.object({
+  verdicts: z.array(z.object({ i: z.number().int(), match: z.enum(["same", "similar", "different"]) })),
+});
+
+type Img = { data: string; mime: string };
+type ImgMime = "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+
+export async function verifyWithClaude(ref: Img, product: string, items: { title: string; img: Img }[]) {
+  const content: Anthropic.Beta.Messages.BetaContentBlockParam[] = [
+    { type: "text", text: `The shopper wants: ${product}. Image 0 (next) is their screenshot.` },
+    { type: "image", source: { type: "base64", media_type: ref.mime as ImgMime, data: ref.data } },
+  ];
+  items.forEach((it, i) => {
+    content.push({ type: "text", text: `Listing ${i}: ${it.title}` });
+    content.push({ type: "image", source: { type: "base64", media_type: it.img.mime as ImgMime, data: it.img.data } });
+  });
+  content.push({ type: "text", text: `Give a verdict for every listing 0 to ${items.length - 1}.` });
+  const res = await claude().beta.messages.parse({
+    model: model(),
+    max_tokens: 8000,
+    betas: ["server-side-fallback-2026-07-01"],
+    fallbacks: "default",
+    output_config: { effort: "low", format: zodOutputFormat(VerifySchema) },
+    system: VERIFY_PROMPT,
+    messages: [{ role: "user", content }],
+  });
+  const map = new Map<number, "same" | "similar" | "different">();
+  for (const v of res.parsed_output?.verdicts ?? []) map.set(v.i, v.match);
+  return map;
 }

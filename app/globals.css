@@ -127,3 +127,4 @@ footer a{text-decoration:none}
 .close{background:var(--field);color:#fff}
 .close h1{font-size:clamp(40px,7vw,72px)}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.rows.similar .row{opacity:.85}

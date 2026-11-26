@@ -4,12 +4,14 @@ import { aiProvider, classify } from "@/lib/ai";
 import { homeCountry, searchCountries } from "@/lib/countries";
 import { ebayMarkets, hasEbay, searchEbay } from "@/lib/ebay";
 import { mockOffers } from "@/lib/mock";
+import { describe } from "@/lib/prompts";
 import { checkStock } from "@/lib/stock";
+import { verifyOffers } from "@/lib/verify";
 import { dedupe, hasSerpApi, keywordFilter, searchCountry } from "@/lib/shopping";
 import type { Offer, SearchResult } from "@/lib/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const httpUrl = z.string().max(2000).refine((u) => /^https?:\/\//i.test(u), "bad url");
 
@@ -20,11 +22,15 @@ const Body = z.object({
     colour: z.string().max(120),
     articleCode: z.string().max(60).nullable(),
     category: z.string().max(80),
+    productType: z.string().max(120).optional(),
+    features: z.array(z.string().max(120)).max(8).optional(),
     searchQuery: z.string().min(2).max(200),
     confidence: z.enum(["high", "medium", "low"]),
     notes: z.string().max(500),
   }),
   size: z.string().max(40).optional(),
+  // The shopper's screenshot (small JPEG, base64), used to compare result photos.
+  image: z.object({ data: z.string().max(1_000_000), mime: z.enum(["image/jpeg", "image/png", "image/webp"]) }).optional(),
   // Shop pages Google Lens found for the screenshot (sent back by the page).
   lensOffers: z
     .array(
@@ -60,7 +66,7 @@ function median(nums: number[]): number | null {
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
-  const { product, lensOffers = [] } = parsed.data;
+  const { product, lensOffers = [], image } = parsed.data;
   const countries = searchCountries();
   const home = homeCountry();
 
@@ -68,6 +74,8 @@ export async function POST(req: Request) {
     await new Promise((r) => setTimeout(r, 1200));
     const result: SearchResult = {
       offers: mockOffers(),
+      similar: [],
+      visualCheck: false,
       countries: countries.map((c) => c.toUpperCase()),
       sources: ["Demo"],
       usualPrice: 119.9,
@@ -124,6 +132,13 @@ export async function POST(req: Request) {
     );
   }
 
+  // Strict by default: only "exact" text matches go in the main list, "likely" ones go to "similar".
+  let similar: Offer[] = [];
+  if (checked) {
+    similar = offers.filter((o) => o.match === "likely");
+    offers = offers.filter((o) => o.match === "exact");
+  }
+
   // Throw away extreme outliers (usually accessories or kids' versions that slipped through).
   const med = median(offers.map((o) => o.total));
   if (med) offers = offers.filter((o) => o.total > med * 0.3);
@@ -133,12 +148,30 @@ export async function POST(req: Request) {
     return a.total - b.total || rank(a) - rank(b);
   });
 
+  // Visual check: compare the photos of the cheapest candidates with the shopper's screenshot.
+  let visualCheck = false;
+  if (image && provider) {
+    const pool = dedupe([...offers, ...similar]).sort((a, b) => a.total - b.total).slice(0, 32);
+    try {
+      const verdicts = await verifyOffers(image, describe(product), pool);
+      offers = pool.filter((_, i) => verdicts[i] === "same").map((o) => ({ ...o, seen: true, match: "exact" as const }));
+      similar = pool.filter((_, i) => verdicts[i] === "similar" || verdicts[i] === "unchecked").map((o) => ({ ...o, match: "likely" as const }));
+      visualCheck = true;
+    } catch (e) {
+      console.error("visual check failed", e);
+      warnings.push("The photo comparison didn't work this time, so results are matched on their titles only.");
+    }
+  }
+
   // Live stock check on the shop pages we link to directly (free). Out-of-stock offers are removed.
-  const toCheck = offers.slice(0, 40).filter((o) => o.stock === "unknown" && o.source === "lens").slice(0, 15);
+  const toCheck = [...offers.slice(0, 40), ...similar.slice(0, 10)].filter((o) => o.stock === "unknown" && o.source === "lens").slice(0, 15);
   const stock = await Promise.all(toCheck.map((o) => checkStock(o.url)));
   const gone = new Set(toCheck.filter((_, i) => stock[i] === "out"));
   toCheck.forEach((o, i) => { if (stock[i] === "in") o.stock = "in"; });
-  if (gone.size) offers = offers.filter((o) => !gone.has(o));
+  if (gone.size) {
+    offers = offers.filter((o) => !gone.has(o));
+    similar = similar.filter((o) => !gone.has(o));
+  }
 
   // "Usual price": the typical price in the shopper's home country, otherwise the typical listed price.
   const homePrices = offers.filter((o) => o.country === home.toUpperCase()).map((o) => o.oldPrice ?? o.total);
@@ -146,6 +179,8 @@ export async function POST(req: Request) {
 
   const result: SearchResult = {
     offers: offers.slice(0, 40),
+    similar: dedupe(similar).sort((a, b) => a.total - b.total).slice(0, 20),
+    visualCheck,
     countries: countries.map((c) => c.toUpperCase()),
     sources,
     usualPrice,

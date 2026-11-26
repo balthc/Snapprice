@@ -4,6 +4,8 @@ export type Product = {
   colour: string;
   articleCode: string | null;
   category: string;
+  productType?: string; // e.g. "hooded padded jacket"
+  features?: string[]; // visual details that tell it apart, e.g. "two flap pockets"
   searchQuery: string;
   confidence: "high" | "medium" | "low";
   notes: string;
@@ -25,10 +27,13 @@ export type Offer = {
   reviews: number | null;
   match: "exact" | "likely" | "unsure";
   stock: "in" | "unknown"; // "in" = confirmed in stock; out-of-stock offers are removed
+  seen?: boolean; // photo compared with the shopper's screenshot and judged the same product
 };
 
 export type SearchResult = {
   offers: Offer[];
+  similar: Offer[]; // same brand and kind of item, but not confirmed as the same product
+  visualCheck: boolean; // true when result photos were compared with the screenshot
   countries: string[];
   sources: string[];
   usualPrice: number | null;
