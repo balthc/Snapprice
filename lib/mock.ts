@@ -36,5 +36,6 @@ export function mockOffers(): Offer[] {
     rating: 4.6,
     reviews: 120,
     match: "exact" as const,
+    stock: "in" as const,
   }));
 }

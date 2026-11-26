@@ -17,6 +17,9 @@ type SerpShoppingItem = {
   old_price?: string;
   extracted_old_price?: number;
   delivery?: string;
+  extensions?: string[];
+  tag?: string;
+  snippet?: string;
   rating?: number;
   reviews?: number;
 };
@@ -31,6 +34,9 @@ export function parseShipping(text?: string): number | null {
   if (!m) return null;
   return parseFloat((m[1] || m[2] || m[3]).replace(",", "."));
 }
+
+const OUT_OF_STOCK =
+  /(out of stock|sold out|niet (meer )?(op voorraad|leverbaar)|uitverkocht|nicht (auf lager|vorrätig|verfügbar)|ausverkauft|esaurito|non disponibile|rupture de stock|épuisé|agotado|sin stock|brak w magazynie|wyprzedane|udsolgt|slutsåld)/i;
 
 export async function searchCountry(query: string, cc: string): Promise<Offer[]> {
   const c = COUNTRIES[cc];
@@ -53,6 +59,8 @@ export async function searchCountry(query: string, cc: string): Promise<Offer[]>
   const rates = await eurRates();
   const offers: Offer[] = [];
   for (const it of data.shopping_results ?? []) {
+    // Google mostly lists in-stock offers already; drop any that say otherwise.
+    if (OUT_OF_STOCK.test([it.delivery, it.tag, it.snippet, ...(it.extensions ?? [])].join(" "))) continue;
     if (!it.extracted_price || !it.title || !(it.link || it.product_link || it.immersive_product_page_token)) continue;
     const price = toEur(it.extracted_price, c.currency, rates);
     const oldPrice = it.extracted_old_price ? toEur(it.extracted_old_price, c.currency, rates) : null;
@@ -82,6 +90,7 @@ export async function searchCountry(query: string, cc: string): Promise<Offer[]>
       rating: it.rating ?? null,
       reviews: it.reviews ?? null,
       match: "unsure",
+      stock: "unknown",
     });
   }
   return offers;

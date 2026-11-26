@@ -72,6 +72,16 @@ export default function Finder() {
     fetch("/api/status", { cache: "no-store" }).then((r) => r.json()).then(setStatus).catch(() => {});
   }, []);
   const busy = stage === "identifying" || stage === "searching";
+
+  // Paste a screenshot anywhere on the page (Ctrl/Cmd+V).
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const f = e.clipboardData?.files?.[0];
+      if (f?.type.startsWith("image/")) onFile(f);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  });
   const blocked = ENFORCE_LIMIT && quota.left === 0;
 
   // Adds the optional colour to the search words if it isn't in there already.
@@ -166,156 +176,154 @@ export default function Finder() {
   const offers = result?.offers ?? [];
   const best = offers[0];
   const saving = best && result?.usualPrice && result.usualPrice > best.total ? result.usualPrice - best.total : null;
+  const title = product
+    ? product.model.toLowerCase().startsWith(product.brand.toLowerCase()) ? product.model : `${product.brand} ${product.model}`
+    : "";
 
   return (
-    <div className="app" role="region" aria-label="Price finder">
-      <div className="bar">
-        <i></i><i></i><i></i><span>snapprice.app/search</span>
-        {status && (
-          <span className="modes" title={`Version ${status.version}`}>
-            <span className={`mode ${status.livePrices ? "on" : "off"}`}>{status.livePrices ? "Live prices" : "Demo prices"}</span>
-            <span className={`mode ${status.recognition ? "on" : "off"}`}>{status.recognition ? "Screenshot recognition on" : "Screenshot recognition off"}</span>
+    <>
+      <div className="finder">
+        <label
+          className={`drop${over ? " over" : ""}${busy ? " busy" : ""}`}
+          onDragOver={(e) => { e.preventDefault(); setOver(true); }}
+          onDragLeave={() => setOver(false)}
+          onDrop={(e) => { e.preventDefault(); setOver(false); onFile(e.dataTransfer.files?.[0]); }}
+        >
+          <input ref={fileRef} type="file" accept="image/*" aria-label="Upload a product screenshot" disabled={busy || blocked} onChange={(e) => onFile(e.target.files?.[0])} />
+          {preview ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img className="shot" src={preview} alt="Your screenshot" />
+          ) : (
+            <span className="icon" aria-hidden="true">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" /></svg>
+            </span>
+          )}
+          <span>
+            <b>{stage === "identifying" ? "Recognising the product…" : stage === "searching" ? "Checking shops and stock…" : preview ? "Drop another screenshot" : "Drop a screenshot"}</b>
+            <br />
+            <small>{busy ? "This takes 10 to 30 seconds" : "or click to choose one, or paste it. Shop pages, Instagram posts and photos all work."}</small>
           </span>
-        )}
+          {busy && <span className="scan" aria-hidden="true" />}
+        </label>
+
+        <form className="search" onSubmit={onText}>
+          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Or type a product name" aria-label="Product name" disabled={busy} />
+          <input className="small" value={colour} onChange={(e) => setColour(e.target.value)} placeholder="Colour" aria-label="Colour, optional" disabled={busy} />
+          <input className="small" value={size} onChange={(e) => setSize(e.target.value)} placeholder="Size" aria-label="Size, optional" disabled={busy} />
+          <button className="btn btn-main" type="submit" disabled={busy || text.trim().length < 3}>Search</button>
+        </form>
+
+        <div className="statusline">
+          {status && !status.livePrices && <span className="pill off">Demo mode: sample prices</span>}
+          {status && status.livePrices && !status.recognition && <span className="pill off">Screenshot recognition off</span>}
+          <span>
+            {blocked
+              ? "You've used your free searches this month."
+              : `${quota.left} of ${FREE_SEARCHES_PER_MONTH} free searches left this month`}
+          </span>
+        </div>
+        {error && <p className="err" role="alert">{error}</p>}
       </div>
-      <div className="app-grid">
-        <div className="app-left">
-          <label
-            className={`drop${over ? " over" : ""}${busy || blocked ? " disabled" : ""}`}
-            onDragOver={(e) => { e.preventDefault(); setOver(true); }}
-            onDragLeave={() => setOver(false)}
-            onDrop={(e) => { e.preventDefault(); setOver(false); onFile(e.dataTransfer.files?.[0]); }}
-          >
-            <input ref={fileRef} type="file" accept="image/*" aria-label="Upload a product screenshot" onChange={(e) => onFile(e.target.files?.[0])} />
-            <span className="thumb">
-              {preview ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={preview} alt="Your screenshot" />
-              ) : (
-                <svg width="54" height="80" viewBox="0 0 54 80" aria-hidden="true"><path d="M6 4h42l4 72H32L27 30l-5 46H2z" fill="#2b2a28" /><path d="M6 4h42v8H6z" fill="#4a4844" /><path d="M8 40h12v16H6zM34 40h12l2 16H34z" fill="#3a3936" /></svg>
-              )}
-            </span>
-            <span>
-              <b>{stage === "identifying" ? <><span className="spinner" />Recognising the product…</> : preview ? "Drop another screenshot" : "Drop a screenshot here"}</b>
-              <small>or tap to choose one. Any shop, Instagram post or photo works.</small>
-            </span>
-          </label>
 
-          <div className="or">or type it</div>
-          <form className="field" onSubmit={onText}>
-            <input value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. Carhartt WIP Double Knee Pant black" aria-label="Product name" disabled={busy} />
-            <button className="btn btn-main" type="submit" disabled={busy || text.trim().length < 3}>Search</button>
-          </form>
-          <div className="field opts">
-            <input value={colour} onChange={(e) => setColour(e.target.value)} placeholder="Colour (optional)" aria-label="Colour, optional" disabled={busy} />
-            <input value={size} onChange={(e) => setSize(e.target.value)} placeholder="Size (optional)" aria-label="Size, optional" disabled={busy} />
-          </div>
-
+      {(product || stage === "searching") && (
+        <div className={`results${stage === "searching" ? " loading" : ""}`} aria-live="polite">
           {product && (
-            <div className="match">
-              <p className="note">Matched product {demo && <span className="demo-badge">Demo</span>}</p>
-              <h3>{product.model.toLowerCase().startsWith(product.brand.toLowerCase()) ? product.model : `${product.brand} ${product.model}`}{product.colour && product.colour !== "not specified" ? `, ${product.colour}` : ""}</h3>
-              <div className="chips">
-                <span className={`chip ${product.confidence === "low" ? "ok-chip-low" : "ok"}`}>
-                  {product.confidence === "high" ? "Confident match" : product.confidence === "medium" ? "Probable match" : "Unsure, please check"}
-                </span>
-                {product.colour && product.colour !== "not specified" && <span className="chip ok">Colour: {product.colour}</span>}
-                {product.articleCode && <span className="chip">Code {product.articleCode}</span>}
-              </div>
-              {product.notes && <p className="muted">{product.notes}</p>}
-              {recognisedBy && recognisedBy !== "demo" && (
-                <p className="muted">Recognised by {recognisedBy === "lens" ? "Google Lens" : recognisedBy === "gemini" ? "Gemini" : "Claude"}{lens.length ? `, which also found ${lens.length} shop pages` : ""}.</p>
-              )}
-              <details>
-                <summary className="muted" style={{ cursor: "pointer" }}>Not right? Fix the search</summary>
-                <div className="edit" style={{ marginTop: 8 }}>
-                  <div className="field">
-                    <input value={product.searchQuery} onChange={(e) => edit("searchQuery", e.target.value)} aria-label="Search words" />
-                    <button className="btn btn-ghost" type="button" disabled={busy} onClick={() => search(product)}>Search again</button>
-                  </div>
+            <div className="matched">
+              <span className="muted">Looking for</span>
+              <h3>{title}{product.colour && product.colour !== "not specified" ? ` · ${product.colour}` : ""}</h3>
+              {product.articleCode && <span className="tag">{product.articleCode}</span>}
+              {demo && <span className="tag pink">Demo</span>}
+              {product.confidence === "low" && <span className="tag pink">Not sure, please check</span>}
+              <details className="fix">
+                <summary>Not right? Edit</summary>
+                <div className="fixrow">
+                  <input value={product.searchQuery} onChange={(e) => edit("searchQuery", e.target.value)} aria-label="Search words" />
+                  <button className="btn btn-main" type="button" disabled={busy} onClick={() => search(product)}>Search again</button>
                 </div>
               </details>
             </div>
           )}
 
-          {error && <p className="err" role="alert">{error}</p>}
-          <p className="quota">
-            {blocked
-              ? "You've used your free searches this month. Plus with unlimited searches is coming soon."
-              : `${quota.left} of ${FREE_SEARCHES_PER_MONTH} free searches left this month.`}
-          </p>
-        </div>
-
-        <div className={`app-right${stage === "searching" ? " scan" : ""}`}>
           {stage === "searching" && (
-            <div className="res-head"><h3><span className="spinner" />Checking shops across Europe…</h3><p>This takes 10 to 30 seconds</p></div>
+            <div className="rows"><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></div>
           )}
-          {stage !== "searching" && !result && (
-            <div className="empty">
-              <h3 style={{ marginBottom: 8 }}>Your cheapest shops appear here</h3>
-              <p>Drop a screenshot or type a product name to start.</p>
-            </div>
-          )}
+
           {result && stage === "done" && (
             <>
-              {result.demo ? (
-                <p className="err"><b>Sample results, not real shops.</b> The site can&apos;t see a SerpApi key yet, so these are made-up example prices.</p>
-              ) : (
-                <p className="live-note"><span className="mode on">Live</span> Real prices from Google Shopping, checked just now.</p>
+              {result.demo && (
+                <p className="err"><b>Sample results, not real shops.</b> Live prices switch on once a SerpApi key is added.</p>
               )}
               <div className="res-head">
-                <h3>{offers.length ? `${offers.length} ${offers.length === 1 ? "shop has" : "shops have"} it` : "No exact matches found"}</h3>
-                <p>Sorted by price with shipping · {result.sources.join(" + ")} · {result.countries.join(", ")}</p>
+                <h2>{offers.length ? `${offers.length} ${offers.length === 1 ? "offer" : "offers"} in stock` : "Nothing in stock found"}</h2>
+                <p className="muted">Cheapest first, shipping included · {result.countries.join(" ")}</p>
               </div>
+              {saving && saving > 1 && (
+                <div className="save"><span>Save versus the usual price</span><strong>{eur(saving)} ({Math.round((saving / result.usualPrice!) * 100)}%)</strong></div>
+              )}
               {size.trim() && offers.length > 0 && (
-                <p className="muted">Your size: <b>{size.trim()}</b>. Shops don&apos;t share stock per size with us yet, so check it on the shop page.</p>
+                <p className="note">Size <b>{size.trim()}</b>: most shops don&apos;t share stock per size, so check your size on the shop page.</p>
               )}
               {offers.length ? (
                 <ol className="rows">
                   {offers.map((o, i) => <Row key={o.url + i} o={o} best={i === 0} />)}
                 </ol>
               ) : (
-                <p className="empty">Try fixing the search words on the left, for example add or remove the colour.</p>
+                <p className="muted">Try editing the search words above, for example remove the colour or add the model number.</p>
               )}
-              {saving && saving > 1 && (
-                <div className="save"><span>You save versus the usual price</span><strong>{eur(saving)} ({Math.round((saving / result.usualPrice!) * 100)}%)</strong></div>
-              )}
-              {result.warnings.map((w) => <p className="warn" key={w}>{w}</p>)}
+              {result.warnings.map((w) => <p className="note" key={w}>{w}</p>)}
+              <p className="note">
+                {result.demo
+                  ? "Demo mode: shop names and prices are examples."
+                  : `Prices from ${result.sources.join(", ")}. Shipping is what the shop lists; check the final amount at checkout.`}
+              </p>
             </>
           )}
         </div>
-      </div>
-      <p className="sample">
-        {demo
-          ? "Demo mode: sample shops and prices, not live data. Add the API keys to switch on live search."
-          : "Prices come from Google Shopping listings and may change. Shipping is what the shop lists; check the final amount at checkout."}
-      </p>
-    </div>
+      )}
+    </>
   );
 }
 
 function Row({ o, best }: { o: Offer; best: boolean }) {
-  const meta = [
-    o.match === "likely" ? "Likely match" : null,
-    o.rating ? `★ ${o.rating.toFixed(1)}${o.reviews ? ` (${o.reviews})` : ""}` : null,
-    o.currency !== "EUR" ? `converted from ${o.currency}` : null,
-    o.source === "lens" ? "found by Google Lens" : null,
-  ].filter(Boolean).join(" · ");
   const ship = o.shipping === null ? "shipping not listed" : o.shipping === 0 ? "free shipping" : `incl. ${eur(o.shipping)} shipping`;
   const off = o.oldPrice ? Math.round((1 - o.price / o.oldPrice) * 100) : 0;
+  const body = (
+    <>
+      <span className="pic">
+        {o.thumbnail ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={o.thumbnail} alt="" loading="lazy" referrerPolicy="no-referrer" />
+        ) : (
+          <span>{o.country}</span>
+        )}
+      </span>
+      <span className="info">
+        <b>{o.shop}</b>
+        <span className="t">{o.title}</span>
+        <span className="tags">
+          {best && <span className="tag green">Lowest price</span>}
+          {o.stock === "in" && <span className="tag green">In stock</span>}
+          {off >= 5 && <span className="tag pink">-{off}%</span>}
+          <span className="tag">{o.country}</span>
+          {o.match === "likely" && <span className="tag">Likely match</span>}
+          {o.rating ? <span className="tag">★ {o.rating.toFixed(1)}</span> : null}
+          {o.source === "ebay" && <span className="tag">eBay</span>}
+        </span>
+      </span>
+      <span className="price">
+        <b>{eur(o.total)}</b>
+        {o.oldPrice && <s>{eur(o.oldPrice)}</s>}
+        <small>{ship}</small>
+      </span>
+    </>
+  );
   return (
     <li>
-      <a className={`row${best ? " best" : ""}`} href={o.source === "demo" ? undefined : o.url} target="_blank" rel="noopener noreferrer nofollow" title={o.title}>
-        <span className="cc">{o.country}</span>
-        <span className="shop">
-          <b>{o.shop}{best && <span className="tag">Lowest</span>}{off >= 5 && <span className="tag">-{off}%</span>}</b>
-          <small>{meta || o.title}</small>
-        </span>
-        <span className="price">
-          <b>{eur(o.total)}</b>
-          {o.oldPrice && <s>{eur(o.oldPrice)}</s>} <small className="note">{ship}</small>
-        </span>
-      </a>
+      {o.source === "demo" ? (
+        <div className={`row${best ? " best" : ""}`}>{body}</div>
+      ) : (
+        <a className={`row${best ? " best" : ""}`} href={o.url} target="_blank" rel="noopener noreferrer nofollow" title={o.title}>{body}</a>
+      )}
     </li>
   );
 }

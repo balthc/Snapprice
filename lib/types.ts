@@ -24,6 +24,7 @@ export type Offer = {
   rating: number | null;
   reviews: number | null;
   match: "exact" | "likely" | "unsure";
+  stock: "in" | "unknown"; // "in" = confirmed in stock; out-of-stock offers are removed
 };
 
 export type SearchResult = {

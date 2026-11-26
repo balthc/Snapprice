@@ -4,6 +4,7 @@ import { aiProvider, classify } from "@/lib/ai";
 import { homeCountry, searchCountries } from "@/lib/countries";
 import { ebayMarkets, hasEbay, searchEbay } from "@/lib/ebay";
 import { mockOffers } from "@/lib/mock";
+import { checkStock } from "@/lib/stock";
 import { dedupe, hasSerpApi, keywordFilter, searchCountry } from "@/lib/shopping";
 import type { Offer, SearchResult } from "@/lib/types";
 
@@ -42,6 +43,7 @@ const Body = z.object({
         rating: z.null(),
         reviews: z.null(),
         match: z.enum(["exact", "likely", "unsure"]),
+        stock: z.enum(["in", "unknown"]),
       })
     )
     .max(60)
@@ -130,6 +132,13 @@ export async function POST(req: Request) {
     const rank = (o: Offer) => (o.match === "exact" ? 0 : 1);
     return a.total - b.total || rank(a) - rank(b);
   });
+
+  // Live stock check on the shop pages we link to directly (free). Out-of-stock offers are removed.
+  const toCheck = offers.slice(0, 40).filter((o) => o.stock === "unknown" && o.source === "lens").slice(0, 15);
+  const stock = await Promise.all(toCheck.map((o) => checkStock(o.url)));
+  const gone = new Set(toCheck.filter((_, i) => stock[i] === "out"));
+  toCheck.forEach((o, i) => { if (stock[i] === "in") o.stock = "in"; });
+  if (gone.size) offers = offers.filter((o) => !gone.has(o));
 
   // "Usual price": the typical price in the shopper's home country, otherwise the typical listed price.
   const homePrices = offers.filter((o) => o.country === home.toUpperCase()).map((o) => o.oldPrice ?? o.total);

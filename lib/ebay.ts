@@ -85,6 +85,7 @@ export async function searchEbay(query: string, cc: string, home: string): Promi
       rating: fb ? Math.round((fb / 20) * 10) / 10 : null, // 98% feedback → 4.9 stars
       reviews: it.seller?.feedbackScore ?? null,
       match: "unsure",
+      stock: "in", // eBay search only returns live listings that can be bought now
     });
   }
   return offers;

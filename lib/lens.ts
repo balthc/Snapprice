@@ -72,6 +72,7 @@ export async function lensOffers(matches: LensMatch[]): Promise<Offer[]> {
       rating: null,
       reviews: null,
       match: "unsure",
+      stock: m.in_stock === true ? "in" : "unknown",
     });
   }
   return out;

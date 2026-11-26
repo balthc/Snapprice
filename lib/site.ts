@@ -1,14 +1,9 @@
 // Edit the texts of the website here. Everything below shows up on the home page.
 
-export const MARKETS = ["Netherlands", "Germany", "Belgium", "France", "Italy", "Spain"];
-
-export const FEATURES: { icon: string; title: string; text: string; soon?: boolean }[] = [
-  { icon: "eye", title: "Screenshot recognition", text: "Works with shop pages, social posts and photos, even when the brand name is not in the picture." },
-  { icon: "code", title: "Exact-match check", text: "Every listing is checked against the brand, model and colour, so look-alikes and copies are left out." },
-  { icon: "box", title: "Delivered price", text: "Shipping as listed by the shop is added and foreign currencies are converted before ranking." },
-  { icon: "size", title: "Size and stock check", text: "Leave out shops that don't have your size in stock.", soon: true },
-  { icon: "bell", title: "Price-drop alerts", text: "Save an item and get a message when any shop drops below your target price.", soon: true },
-  { icon: "shield", title: "Shop safety check", text: "Each shop shows its rating, so you can spot new or unreviewed shops before you click." },
+export const STEPS: [string, string][] = [
+  ["Drop a screenshot", "From any webshop, Instagram or a photo. Or just type the product name, with colour and size if you like."],
+  ["We recognise the exact item", "Brand, model and colour, then we check shops in six European countries at once."],
+  ["Buy where it's cheapest", "Only shops that have it in stock, ranked by price with shipping. One click takes you to the product page."],
 ];
 
 export const FAQS: [string, string][] = [
@@ -16,6 +11,7 @@ export const FAQS: [string, string][] = [
   ["Is it really free?", "Yes. The Free plan gives you 5 screenshot searches every month with no card needed. Plus removes the limit for €4.99 a month."],
   ["Do I buy from Snapprice?", "No. You buy directly from the webshop, with its own checkout, delivery and return policy. Some shops may pay us a small referral fee when you buy, which never changes the price you pay or the ranking."],
   ["Can I return items bought from a shop abroad?", "Shops in the EU must give you at least 14 days to withdraw from an online purchase. Return shipping costs differ per shop, so check the shop's return policy before you buy."],
+  ["Is everything shown in stock?", "We leave out offers that the shop or Google marks as out of stock, and check the shop page where we can. Offers we could confirm are marked In stock. Stock per size isn't shared by most shops, so check your size on the shop page."],
   ["Is the shipping cost exact?", "We show the shipping cost the shop lists. Shops abroad sometimes charge a little more to ship to your country, so check the final amount in the shop's checkout."],
   ["What happens to my screenshots?", "We send them to our recognition services (Google Lens, and Google Gemini or Claude) only to recognise the product. We don't store them ourselves."],
 ];
