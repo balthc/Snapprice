@@ -23,7 +23,7 @@ if (!url) {
 const sql = postgres(url, { max: 4, prepare: false, ssl: /sslmode=disable/.test(url) ? false : "require", connect_timeout: 15 });
 
 const SCHEME = process.env.CRAWL_SCHEME || "https"; // "http" only for local tests
-const SITE = (process.env.SITE_URL || "https://snapprice.vercel.app").replace(/\/$/, "");
+const SITE = (process.env.SITE_URL || "https://snapprice-six.vercel.app").replace(/\/$/, "");
 const UA = `Mozilla/5.0 (compatible; SnappriceBot/1.0; +${SITE}/bot)`;
 const BUDGET_MS = Number(process.env.CRAWL_MINUTES || 40) * 60_000;
 const PARALLEL = Number(process.env.CRAWL_PARALLEL || 24); // different shops at once; each shop still gets 1 request at a time
