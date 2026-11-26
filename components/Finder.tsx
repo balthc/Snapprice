@@ -98,7 +98,40 @@ export default function Finder() {
   const [over, setOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const quota = useQuota();
-  const [status, setStatus] = useState<{ livePrices: boolean; recognition: boolean; sources: string[]; version: string } | null>(null);
+  const [status, setStatus] = useState<{
+    livePrices: boolean;
+    recognition: boolean;
+    sources: string[];
+    version: string;
+    countries: string[];
+    allCountries: { code: string; name: string; eu: boolean }[];
+    maxCountries: number;
+  } | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [showCountries, setShowCountries] = useState(false);
+  useEffect(() => {
+    if (!status) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem("snapprice-countries") || "null");
+      const valid = Array.isArray(saved) ? saved.filter((c: string) => status.allCountries?.some((x) => x.code === c)) : [];
+      setPicked(valid.length ? valid.slice(0, status.maxCountries) : status.countries);
+    } catch {
+      setPicked(status.countries);
+    }
+  }, [status]);
+  function setCountries(list: string[]) {
+    const max = status?.maxCountries ?? 12;
+    const next = list.slice(0, max);
+    setPicked(next);
+    localStorage.setItem("snapprice-countries", JSON.stringify(next));
+  }
+  function toggleCountry(code: string) {
+    if (picked.includes(code)) {
+      if (picked.length > 1) setCountries(picked.filter((c) => c !== code));
+    } else if (picked.length < (status?.maxCountries ?? 12)) {
+      setCountries([...picked, code]);
+    }
+  }
   useEffect(() => {
     fetch("/api/status", { cache: "no-store" }).then((r) => r.json()).then(setStatus).catch(() => {});
   }, []);
@@ -132,7 +165,7 @@ export default function Finder() {
       const res = await fetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ product: p, size: size.trim() || undefined, lensOffers: lensFound, image: image ?? undefined }),
+        body: JSON.stringify({ product: p, size: size.trim() || undefined, lensOffers: lensFound, image: image ?? undefined, countries: picked.length ? picked : undefined }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Search failed.");
@@ -314,6 +347,41 @@ export default function Finder() {
               : `${quota.left} of ${FREE_SEARCHES_PER_MONTH} free searches left this month`}
           </span>
         </div>
+        {status?.allCountries && status.livePrices && (
+          <div className="countries">
+            <button type="button" className="linkish" onClick={() => setShowCountries(!showCountries)} aria-expanded={showCountries}>
+              Searching {picked.length} {picked.length === 1 ? "country" : "countries"}: {picked.join(" ")} · {showCountries ? "Done" : "Change"}
+            </button>
+            {showCountries && (
+              <div className="cpanel">
+                <div className="cpresets">
+                  <button type="button" className="chip" onClick={() => setCountries(status.countries)}>Default ({status.countries.length})</button>
+                  <button type="button" className="chip" onClick={() => setCountries(status.allCountries.filter((c) => c.eu).map((c) => c.code))}>
+                    All EU{status.allCountries.filter((c) => c.eu).length > status.maxCountries ? ` (first ${status.maxCountries})` : ""}
+                  </button>
+                </div>
+                <div className="cchips">
+                  {status.allCountries.map((c) => (
+                    <button
+                      type="button"
+                      key={c.code}
+                      className={`chip${picked.includes(c.code) ? " on" : ""}`}
+                      onClick={() => toggleCountry(c.code)}
+                      title={c.eu ? c.name : `${c.name} (outside the EU: customs may apply)`}
+                      aria-pressed={picked.includes(c.code)}
+                    >
+                      {c.code}{!c.eu && "*"}
+                    </button>
+                  ))}
+                </div>
+                <p className="note">
+                  Each country is one search on the price service, so this search uses {picked.length}. Max {status.maxCountries} per search.
+                  * Outside the EU: customs and VAT may be added.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
         {error && <p className="err" role="alert">{error}</p>}
       </div>
 
@@ -447,6 +515,7 @@ function Row({ o, best }: { o: Offer; best: boolean }) {
           {o.match === "likely" && <span className="tag">Likely match</span>}
           {o.rating ? <span className="tag">★ {o.rating.toFixed(1)}</span> : null}
           {o.source === "ebay" && <span className="tag">eBay</span>}
+          {["UK", "CH", "NO"].includes(o.country) && <span className="tag pink">Outside EU: customs may apply</span>}
         </span>
       </span>
       <span className="price">

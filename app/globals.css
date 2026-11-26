@@ -138,3 +138,11 @@ footer a{text-decoration:none}
 .specgrid input{padding:11px 14px;border-radius:12px;border:1.5px solid var(--line);background:var(--bg);font-size:15px;font-weight:400;color:var(--ink)}
 .specgrid input:focus{outline:none;border-color:var(--ink)}
 @media(max-width:560px){.specgrid{grid-template-columns:minmax(0,1fr)}}
+
+/* country picker */
+.countries{display:grid;gap:10px;justify-items:center}
+.linkish{background:none;border:0;padding:0;color:var(--mute);font-size:13px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.cpanel{display:grid;gap:10px;padding:16px;border:1.5px solid var(--line);border-radius:18px;background:var(--panel);width:100%}
+.cpresets,.cchips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:13px;font-weight:700;padding:6px 11px;border-radius:999px;border:1.5px solid var(--line);background:var(--bg);color:var(--mute);cursor:pointer}
+.chip.on{background:var(--ink);border-color:var(--ink);color:var(--bg)}

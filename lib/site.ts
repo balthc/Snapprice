@@ -2,7 +2,7 @@
 
 export const STEPS: [string, string][] = [
   ["Drop a screenshot", "From any webshop, Instagram or a photo. Or just type the product name, with colour and size if you like."],
-  ["We recognise the exact item", "Brand, model and colour, then we check shops in six European countries at once."],
+  ["We recognise the exact item", "Brand, model and colour, then we check shops across Europe at once: you choose which of 28 countries."],
   ["Buy where it's cheapest", "Only shops that have it in stock, ranked by price with shipping. One click takes you to the product page."],
 ];
 
@@ -17,7 +17,7 @@ export const FAQS: [string, string][] = [
 ];
 
 export const PLANS = {
-  free: { name: "Free", price: "€0", per: "forever", items: ["5 screenshot searches a month", "Prices from shops in 6 countries", "Shipping included in every price"] },
+  free: { name: "Free", price: "€0", per: "forever", items: ["5 screenshot searches a month", "Shops in up to 28 European countries", "Shipping included in every price"] },
   plus: { name: "Plus", price: "€4.99", per: "per month", items: ["Unlimited screenshot searches", "Price-drop alerts (coming soon)", "Second-hand and outlet offers (coming soon)", "Cancel any time, in one click"] },
 };
 

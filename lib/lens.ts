@@ -34,7 +34,8 @@ export async function lensSearch(imageId: string, country: string): Promise<Lens
 
 const TLD_COUNTRY: Record<string, string> = {
   nl: "NL", be: "BE", de: "DE", fr: "FR", it: "IT", es: "ES", at: "AT", pt: "PT", ie: "IE", fi: "FI",
-  pl: "PL", dk: "DK", se: "SE", lu: "LU", uk: "UK", ch: "CH", eu: "EU",
+  pl: "PL", dk: "DK", se: "SE", lu: "LU", uk: "UK", ch: "CH", eu: "EU", gr: "GR", cz: "CZ", hu: "HU", ro: "RO",
+  bg: "BG", hr: "HR", si: "SI", sk: "SK", ee: "EE", lv: "LV", lt: "LT", no: "NO",
 };
 const CURRENCY_SIGN: Record<string, string> = { "€": "EUR", "£": "GBP", $: "USD", "zł": "PLN", kr: "SEK" };
 
@@ -56,7 +57,7 @@ export async function lensOffers(matches: LensMatch[]): Promise<Offer[]> {
     if (!v || !m.link || !m.title || m.in_stock === false) continue;
     let cur = (m.price?.currency || "").trim();
     cur = CURRENCY_SIGN[cur] ?? (cur.length === 3 ? cur.toUpperCase() : "EUR");
-    if (!["EUR", "PLN", "DKK", "SEK"].includes(cur)) continue; // EU shops only (no import duties)
+    if (!["EUR", "PLN", "DKK", "SEK", "CZK", "HUF", "RON", "BGN"].includes(cur)) continue; // EU shops only (no import duties)
     const price = toEur(v, cur, rates);
     out.push({
       source: "lens",

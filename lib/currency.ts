@@ -1,6 +1,6 @@
 // Converts foreign prices to EUR using the European Central Bank rates (via frankfurter.app, free, no key).
 // Falls back to fixed approximate rates if that service is unreachable.
-const FALLBACK: Record<string, number> = { EUR: 1, PLN: 4.3, DKK: 7.46, SEK: 11.3, GBP: 0.85, CHF: 0.94, USD: 1.08 };
+const FALLBACK: Record<string, number> = { EUR: 1, PLN: 4.3, DKK: 7.46, SEK: 11.3, GBP: 0.85, CHF: 0.94, NOK: 11.6, CZK: 25, HUF: 395, RON: 4.98, BGN: 1.96, USD: 1.08 };
 
 let cache: { at: number; rates: Record<string, number> } | null = null;
 

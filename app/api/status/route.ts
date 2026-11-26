@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { aiProvider } from "@/lib/ai";
 import { hasEbay } from "@/lib/ebay";
-import { searchCountries } from "@/lib/countries";
+import { COUNTRIES, homeCountry, maxCountries, searchCountries } from "@/lib/countries";
 import { hasSerpApi } from "@/lib/shopping";
 
 export const runtime = "nodejs";
@@ -17,6 +17,9 @@ export async function GET() {
       recogniser: aiProvider() ?? (hasSerpApi() ? "google-lens" : null),
       matchCheck: aiProvider(),
       countries: searchCountries().map((c) => c.toUpperCase()),
+      allCountries: Object.entries(COUNTRIES).map(([code, c]) => ({ code: code.toUpperCase(), name: c.name, eu: c.eu })),
+      maxCountries: maxCountries(),
+      home: homeCountry().toUpperCase(),
       version: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "local",
     },
     { headers: { "Cache-Control": "no-store" } }

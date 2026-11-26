@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { aiProvider, classify } from "@/lib/ai";
-import { homeCountry, searchCountries } from "@/lib/countries";
+import { COUNTRIES, homeCountry, maxCountries, searchCountries } from "@/lib/countries";
 import { ebayMarkets, hasEbay, searchEbay } from "@/lib/ebay";
 import { mockOffers } from "@/lib/mock";
 import { contradicts } from "@/lib/attributes";
@@ -31,6 +31,7 @@ const Body = z.object({
     notes: z.string().max(500),
   }),
   size: z.string().max(40).optional(),
+  countries: z.array(z.string().max(4)).max(40).optional(),
   // The shopper's screenshot (small JPEG, base64), used to compare result photos.
   image: z.object({ data: z.string().max(1_000_000), mime: z.enum(["image/jpeg", "image/png", "image/webp"]) }).optional(),
   // Shop pages Google Lens found for the screenshot (sent back by the page).
@@ -69,7 +70,8 @@ export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   const { product, lensOffers = [], image } = parsed.data;
-  const countries = searchCountries();
+  const picked = (parsed.data.countries ?? []).map((c) => c.toLowerCase()).filter((c) => c in COUNTRIES);
+  const countries = [...new Set(picked.length ? picked : searchCountries())].slice(0, maxCountries());
   const home = homeCountry();
 
   if (!hasSerpApi() && !hasEbay()) {

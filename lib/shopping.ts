@@ -38,7 +38,22 @@ export function parseShipping(text?: string): number | null {
 const OUT_OF_STOCK =
   /(out of stock|sold out|niet (meer )?(op voorraad|leverbaar)|uitverkocht|nicht (auf lager|vorrätig|verfügbar)|ausverkauft|esaurito|non disponibile|rupture de stock|épuisé|agotado|sin stock|brak w magazynie|wyprzedane|udsolgt|slutsåld)/i;
 
+// Remembers results for 6 hours while this server instance runs, so repeat searches cost no SerpApi credits.
+// (SerpApi also serves identical searches from its own 1-hour cache for free.)
+const cache = new Map<string, { at: number; offers: Offer[] }>();
+const CACHE_MS = 6 * 3600_000;
+
 export async function searchCountry(query: string, cc: string): Promise<Offer[]> {
+  const key = `${cc}|${query.toLowerCase().trim()}`;
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.offers.map((o) => ({ ...o }));
+  const offers = await fetchCountry(query, cc);
+  if (cache.size > 500) cache.clear();
+  cache.set(key, { at: Date.now(), offers });
+  return offers.map((o) => ({ ...o }));
+}
+
+async function fetchCountry(query: string, cc: string): Promise<Offer[]> {
   const c = COUNTRIES[cc];
   const params = new URLSearchParams({
     engine: "google_shopping",
@@ -119,7 +134,7 @@ export function keywordFilter(offers: Offer[], query: string): Offer[] {
 export function dedupe(offers: Offer[]): Offer[] {
   const best = new Map<string, Offer>();
   for (const o of offers) {
-    const key = o.shop.toLowerCase().replace(/^www\./, "").replace(/\.(com|nl|de|it|fr|es|be|eu|at|pl)$/, "");
+    const key = o.shop.toLowerCase().replace(/^www\./, "").replace(/\.(com|co\.uk|[a-z]{2})$/, "");
     const cur = best.get(key);
     if (!cur || o.total < cur.total) best.set(key, o);
   }

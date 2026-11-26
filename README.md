@@ -76,7 +76,8 @@ Now the site recognises real screenshots and shows live prices. Keep the keys se
 
 | Name | What it does | Default |
 |---|---|---|
-| `SEARCH_COUNTRIES` | Countries to search, comma separated. Options: nl, be, de, fr, it, es, at, pt, ie, fi, pl, dk, se | `nl,de,be,fr,it,es` |
+| `SEARCH_COUNTRIES` | Default countries (shoppers can change them on the page). Options: nl, be, de, fr, it, es, at, lu, pt, ie, fi, gr, sk, si, hr, ee, lv, lt, pl, cz, hu, ro, bg, dk, se, uk, ch, no | `nl,de,be,fr,it,es` |
+| `MAX_COUNTRIES_PER_SEARCH` | Most countries one search may use (each = 1 SerpApi search) | `12` |
 | `HOME_COUNTRY` | The shopper's country, used for the "you save" comparison | `nl` |
 | `CLAUDE_MODEL` | Which Claude model is used | `claude-opus-5-5` |
 | `NEXT_PUBLIC_ENFORCE_FREE_LIMIT` | Set to `true` to block searches after the 5 free ones a month | off |
