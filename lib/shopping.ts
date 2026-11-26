@@ -7,6 +7,7 @@ export const hasSerpApi = () => Boolean(serpApiKey());
 
 type SerpShoppingItem = {
   title?: string;
+  immersive_product_page_token?: string;
   source?: string;
   link?: string;
   product_link?: string;
@@ -52,16 +53,26 @@ export async function searchCountry(query: string, cc: string): Promise<Offer[]>
   const rates = await eurRates();
   const offers: Offer[] = [];
   for (const it of data.shopping_results ?? []) {
-    if (!it.extracted_price || !it.title || !(it.link || it.product_link)) continue;
+    if (!it.extracted_price || !it.title || !(it.link || it.product_link || it.immersive_product_page_token)) continue;
     const price = toEur(it.extracted_price, c.currency, rates);
     const oldPrice = it.extracted_old_price ? toEur(it.extracted_old_price, c.currency, rates) : null;
     const shipRaw = parseShipping(it.delivery);
     const shipping = shipRaw === null ? null : toEur(shipRaw, c.currency, rates);
+    // Google Shopping only gives a link to Google's own product page. Our /api/go link looks up the
+    // shop's own product page when the shopper clicks (1 SerpApi search per click, repeat clicks are cached).
+    const url = it.link
+      ? it.link
+      : `/api/go?${new URLSearchParams({
+          ...(it.immersive_product_page_token ? { t: it.immersive_product_page_token } : {}),
+          s: it.source || "",
+          ...(it.product_link ? { f: it.product_link } : {}),
+        })}`;
     offers.push({
+      source: "google",
       country: cc.toUpperCase(),
       shop: it.source || "Unknown shop",
       title: it.title,
-      url: it.link || it.product_link!,
+      url,
       thumbnail: it.thumbnail ?? null,
       price,
       oldPrice: oldPrice && oldPrice > price ? oldPrice : null,
@@ -83,23 +94,23 @@ export function brandFilter(offers: Offer[], brand: string): Offer[] {
   return offers.filter((o) => words.some((w) => o.title.toLowerCase().includes(w)));
 }
 
-// Used when Claude is not configured: most of the search words must appear in the listing title.
+// Used when no AI is configured: the first word (usually the brand) and most other search words must appear in the title.
 export function keywordFilter(offers: Offer[], query: string): Offer[] {
   const norm = (t: string) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  const words = [...new Set(norm(query).split(/[^a-z0-9]+/).filter((w) => w.length > 2))];
+  const words = [...new Set(norm(query).split(/[^a-z0-9]+/).filter((w) => w.length > 1))];
   if (!words.length) return offers;
-  const need = Math.max(1, Math.ceil(words.length * 0.75));
+  const need = Math.max(1, Math.ceil(words.length * 0.6));
   return offers.filter((o) => {
     const t = norm(o.title);
-    return words.filter((w) => t.includes(w)).length >= need;
+    return t.includes(words[0]) && words.filter((w) => t.includes(w)).length >= need;
   });
 }
 
-// Same shop listing the same price in several countries shows up repeatedly; keep the cheapest per shop.
+// The same shop often shows up in several countries' results (and in Lens); keep its cheapest offer.
 export function dedupe(offers: Offer[]): Offer[] {
   const best = new Map<string, Offer>();
   for (const o of offers) {
-    const key = o.shop.toLowerCase().replace(/\.(com|nl|de|it|fr|es|be|eu)$/, "");
+    const key = o.shop.toLowerCase().replace(/^www\./, "").replace(/\.(com|nl|de|it|fr|es|be|eu|at|pl)$/, "");
     const cur = best.get(key);
     if (!cur || o.total < cur.total) best.set(key, o);
   }

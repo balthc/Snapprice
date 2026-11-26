@@ -22,6 +22,7 @@ export function mockOffers(): Offer[] {
     ["NL", "Denim Depot", 119.9, null, 0],
   ];
   return rows.map(([country, shop, price, oldPrice, shipping]) => ({
+    source: "demo" as const,
     country,
     shop,
     title: "Carhartt WIP Double Knee Pant Black rinsed",

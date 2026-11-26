@@ -4,13 +4,22 @@ Screenshot a product, and Snapprice finds the webshop in Europe that sells that 
 
 **How it works**
 
-1. You drop in a screenshot (or type a product name).
-2. Claude (an AI from Anthropic) looks at the picture and works out the exact product: brand, model, colour and article code.
-3. The site searches Google Shopping in several countries at once (Netherlands, Germany, Belgium, France, Italy, Spain by default) through SerpApi.
-4. Claude checks every shop listing and throws out look-alikes, other colours and accessories.
-5. You get the shops ranked by price including shipping, with foreign currencies converted to euros.
+1. You drop in a screenshot (or type a product name), optionally with colour and size.
+2. **Google Lens** (through SerpApi) finds the product online. If a free **Gemini** key (or a paid Claude key) is set, the AI reads the screenshot and the Lens results and names the exact product: brand, model, colour and article code.
+3. The site searches **Google Shopping** in several countries at once (NL, DE, BE, FR, IT, ES by default), plus **eBay** in those countries if you add the free eBay keys, plus the shop pages Google Lens found.
+4. Listings that aren't the same product are thrown out (by the AI if set up, otherwise by the search words).
+5. You get the shops ranked by price including shipping, in euros. Clicking a result opens that shop's own product page.
 
-Without API keys the site runs in **demo mode**: everything works, but with sample results. Nothing costs money in demo mode.
+Without any keys the site runs in **demo mode** with sample results.
+
+## What each key costs
+
+| Key | What it adds | Cost |
+|---|---|---|
+| `SERPAPI_API_KEY` | Google Shopping prices, Google Lens recognition, direct shop links | Free plan: limited searches per month. Each typed search uses 1 per country (6 by default), a screenshot uses 1 more, and opening a Google Shopping result uses 1 (repeat clicks are free while cached). |
+| `GEMINI_API_KEY` | Smarter recognition (reads brand, model, colour, code) and the exact-match check | Free tier, no card. Google may use free-tier data to improve its products. |
+| `EBAY_CLIENT_ID` + `EBAY_CLIENT_SECRET` | eBay offers from 9 EU countries, with shipping to your country | Free (5,000 calls a day). |
+| `ANTHROPIC_API_KEY` | Claude instead of Gemini, usually the most accurate | Paid, a few cents per search. Optional. |
 
 ---
 
@@ -24,29 +33,41 @@ You need: this GitHub repository and a free Vercel account.
 4. Leave all settings as they are and click **Deploy**.
 5. After about a minute you get a web address like `snapprice-xyz.vercel.app`. That is your live site, in demo mode.
 
-## Switch on real search (add the two keys)
+## Switch on real search
 
-### Key 1: Claude, for recognising products
-
-1. Go to **https://platform.claude.com** and create an account.
-2. Under **Billing**, add a payment method and some credit (€5 to €10 is plenty to start).
-3. Go to **Settings → API keys → Create key**. Copy the key (it starts with `sk-ant-`).
-
-Rough cost: a few cents per search (one picture to recognise plus one check of the shop listings).
-
-### Key 2: SerpApi, for prices from Google Shopping
+### Main key: SerpApi, for prices, Google Lens and direct shop links
 
 1. Go to **https://serpapi.com/users/sign_up** and create an account. The free plan includes a limited number of searches per month, enough to test.
 2. Go to **https://serpapi.com/manage-api-key** and copy your **Private API Key**.
 
 Cost: one user search uses one SerpApi search **per country** (so 6 by default). On the free plan that means you can do a handful of full searches a month; for real customers you'll need a paid plan. You can search fewer countries with the `SEARCH_COUNTRIES` setting below.
 
+### Free key: Gemini, for smarter recognition (recommended)
+
+1. Go to **https://aistudio.google.com/apikey** and sign in with a Google account.
+2. Click **Create API key** and copy it. No credit card needed.
+3. Add it in Vercel as `GEMINI_API_KEY`.
+
+### Free keys: eBay, for more offers (optional)
+
+1. Go to **https://developer.ebay.com** and create a free developer account.
+2. Open **Application Keys** and create a **Production** keyset (eBay may ask you to confirm how you'll use it; choose that you're building a price comparison site).
+3. Copy the **App ID (Client ID)** and **Cert ID (Client Secret)**.
+4. Add them in Vercel as `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET`.
+
+### Optional paid key: Claude, instead of Gemini
+
+1. Go to **https://platform.claude.com** and create an account.
+2. Under **Billing**, add a payment method and some credit (€5 to €10 is plenty to start).
+3. Go to **Settings → API keys → Create key**. Copy the key (it starts with `sk-ant-`).
+
+Rough cost: a few cents per search. Only worth it if Gemini's recognition isn't good enough.
+
 ### Add the keys to Vercel
 
 1. In Vercel, open your **snapprice** project → **Settings → Environment Variables**.
-2. Add `ANTHROPIC_API_KEY` with the Claude key as the value. Click **Save**.
-3. Add `SERPAPI_API_KEY` with the SerpApi key. Click **Save**.
-4. Go to **Deployments**, click the **⋯** next to the top one and choose **Redeploy**.
+2. Add each key you have (`SERPAPI_API_KEY`, `GEMINI_API_KEY`, `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`, optionally `ANTHROPIC_API_KEY`) with Production ticked. Click **Save**.
+3. Go to **Deployments**, click the **⋯** next to the top one and choose **Redeploy**.
 
 Now the site recognises real screenshots and shows live prices. Keep the keys secret: never put them in the code or share them.
 
@@ -90,6 +111,7 @@ You can edit a file right on github.com: open it, click the pencil icon, change 
 - **Accounts and payments.** The "5 free searches a month" counter lives in the visitor's browser and is easy to get around. A real subscription needs user accounts (e.g. Clerk or Supabase) and payments (e.g. Stripe or Mollie).
 - **Shipping to your country.** The shipping shown is what the shop lists on Google Shopping. Shops abroad can charge more to ship to the Netherlands.
 - **Size and stock checks, price-drop alerts.** Marked "Coming soon" on the site.
+- **Almost all European webshops.** Google Shopping and eBay cover thousands of shops, but not every small one. The free, legal way to go wider is affiliate networks (Awin, Daisycon, TradeTracker, Tradedoubler, Webgains): they give approved publishers free product feeds from thousands of EU shops, with prices, sizes, stock and direct links, and pay a commission per sale. Next step once accounts are approved: import those feeds into a free database each night.
 - **Referral income.** Links go straight to the shops. Affiliate networks (Awin, TradeTracker, Daisycon) could earn a commission per sale.
 
 ## For developers

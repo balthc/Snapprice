@@ -17,7 +17,7 @@ export const FAQS: [string, string][] = [
   ["Do I buy from Snapprice?", "No. You buy directly from the webshop, with its own checkout, delivery and return policy. Some shops may pay us a small referral fee when you buy, which never changes the price you pay or the ranking."],
   ["Can I return items bought from a shop abroad?", "Shops in the EU must give you at least 14 days to withdraw from an online purchase. Return shipping costs differ per shop, so check the shop's return policy before you buy."],
   ["Is the shipping cost exact?", "We show the shipping cost the shop lists. Shops abroad sometimes charge a little more to ship to your country, so check the final amount in the shop's checkout."],
-  ["What happens to my screenshots?", "We use them only to recognise the product and do not store them."],
+  ["What happens to my screenshots?", "We send them to our recognition services (Google Lens, and Google Gemini or Claude) only to recognise the product. We don't store them ourselves."],
 ];
 
 export const PLANS = {

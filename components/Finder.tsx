@@ -32,19 +32,24 @@ function useQuota() {
   return { used, left: Math.max(0, FREE_SEARCHES_PER_MONTH - used), bump };
 }
 
-// Shrinks big screenshots before upload: faster and cheaper, and recognition doesn't need more.
+// Shrinks screenshots before upload to under ~480 KB (Google Lens accepts max 500 KB). Recognition doesn't need more.
 async function shrink(file: File): Promise<Blob> {
   if (file.type === "image/gif") return file;
   const bmp = await createImageBitmap(file).catch(() => null);
   if (!bmp) return file;
-  const max = 1568;
-  const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
-  if (scale === 1 && file.size < 1.5e6) return file;
-  const c = document.createElement("canvas");
-  c.width = Math.round(bmp.width * scale);
-  c.height = Math.round(bmp.height * scale);
-  c.getContext("2d")!.drawImage(bmp, 0, 0, c.width, c.height);
-  return new Promise((res) => c.toBlob((b) => res(b || file), "image/jpeg", 0.88));
+  if (file.size < 480_000 && Math.max(bmp.width, bmp.height) <= 1600) return file;
+  let max = 1400;
+  for (let i = 0; i < 6; i++) {
+    const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * scale);
+    c.height = Math.round(bmp.height * scale);
+    c.getContext("2d")!.drawImage(bmp, 0, 0, c.width, c.height);
+    const blob = await new Promise<Blob | null>((res) => c.toBlob(res, "image/jpeg", 0.85 - i * 0.07));
+    if (blob && blob.size < 480_000) return blob;
+    max = Math.round(max * 0.8);
+  }
+  return file;
 }
 
 export default function Finder() {
@@ -55,17 +60,28 @@ export default function Finder() {
   const [error, setError] = useState<string | null>(null);
   const [demo, setDemo] = useState(false);
   const [text, setText] = useState("");
+  const [colour, setColour] = useState("");
+  const [size, setSize] = useState("");
+  const [lens, setLens] = useState<Offer[]>([]);
+  const [recognisedBy, setRecognisedBy] = useState<string | null>(null);
   const [over, setOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const quota = useQuota();
-  const [status, setStatus] = useState<{ livePrices: boolean; recognition: boolean; version: string } | null>(null);
+  const [status, setStatus] = useState<{ livePrices: boolean; recognition: boolean; sources: string[]; version: string } | null>(null);
   useEffect(() => {
     fetch("/api/status", { cache: "no-store" }).then((r) => r.json()).then(setStatus).catch(() => {});
   }, []);
   const busy = stage === "identifying" || stage === "searching";
   const blocked = ENFORCE_LIMIT && quota.left === 0;
 
-  async function search(p: Product) {
+  // Adds the optional colour to the search words if it isn't in there already.
+  function withColour(p: Product): Product {
+    const c = colour.trim();
+    if (!c || p.searchQuery.toLowerCase().includes(c.toLowerCase())) return p;
+    return { ...p, colour: c, searchQuery: `${p.searchQuery} ${c}` };
+  }
+
+  async function search(p: Product, lensFound: Offer[] = lens) {
     if (blocked) return;
     setStage("searching");
     setError(null);
@@ -74,7 +90,7 @@ export default function Finder() {
       const res = await fetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ product: p }),
+        body: JSON.stringify({ product: p, size: size.trim() || undefined, lensOffers: lensFound }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Search failed.");
@@ -97,6 +113,7 @@ export default function Finder() {
     setError(null);
     setResult(null);
     setProduct(null);
+    setLens([]);
     setPreview(URL.createObjectURL(file));
     setStage("identifying");
     try {
@@ -106,10 +123,13 @@ export default function Finder() {
       const res = await fetch("/api/identify", { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Recognition failed.");
-      setProduct(data.product);
+      const p = withColour(data.product);
+      setProduct(p);
+      setLens(data.lensOffers ?? []);
+      setRecognisedBy(data.recognisedBy ?? null);
       if (data.demo) setDemo(true);
       setStage("identified");
-      await search(data.product);
+      await search(p, data.lensOffers ?? []);
     } catch (e) {
       setError((e as Error).message);
       setStage("idle");
@@ -130,9 +150,12 @@ export default function Finder() {
       confidence: "medium",
       notes: "Typed by the shopper.",
     };
+    const full = withColour(p);
     setPreview(null);
-    setProduct(p);
-    search(p);
+    setLens([]);
+    setRecognisedBy(null);
+    setProduct(full);
+    search(full, []);
   }
 
   function edit(field: keyof Product, value: string) {
@@ -183,6 +206,10 @@ export default function Finder() {
             <input value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. Carhartt WIP Double Knee Pant black" aria-label="Product name" disabled={busy} />
             <button className="btn btn-main" type="submit" disabled={busy || text.trim().length < 3}>Search</button>
           </form>
+          <div className="field opts">
+            <input value={colour} onChange={(e) => setColour(e.target.value)} placeholder="Colour (optional)" aria-label="Colour, optional" disabled={busy} />
+            <input value={size} onChange={(e) => setSize(e.target.value)} placeholder="Size (optional)" aria-label="Size, optional" disabled={busy} />
+          </div>
 
           {product && (
             <div className="match">
@@ -196,6 +223,9 @@ export default function Finder() {
                 {product.articleCode && <span className="chip">Code {product.articleCode}</span>}
               </div>
               {product.notes && <p className="muted">{product.notes}</p>}
+              {recognisedBy && recognisedBy !== "demo" && (
+                <p className="muted">Recognised by {recognisedBy === "lens" ? "Google Lens" : recognisedBy === "gemini" ? "Gemini" : "Claude"}{lens.length ? `, which also found ${lens.length} shop pages` : ""}.</p>
+              )}
               <details>
                 <summary className="muted" style={{ cursor: "pointer" }}>Not right? Fix the search</summary>
                 <div className="edit" style={{ marginTop: 8 }}>
@@ -235,8 +265,11 @@ export default function Finder() {
               )}
               <div className="res-head">
                 <h3>{offers.length ? `${offers.length} ${offers.length === 1 ? "shop has" : "shops have"} it` : "No exact matches found"}</h3>
-                <p>Sorted by price with shipping · {result.countries.join(", ")}</p>
+                <p>Sorted by price with shipping · {result.sources.join(" + ")} · {result.countries.join(", ")}</p>
               </div>
+              {size.trim() && offers.length > 0 && (
+                <p className="muted">Your size: <b>{size.trim()}</b>. Shops don&apos;t share stock per size with us yet, so check it on the shop page.</p>
+              )}
               {offers.length ? (
                 <ol className="rows">
                   {offers.map((o, i) => <Row key={o.url + i} o={o} best={i === 0} />)}
@@ -266,12 +299,13 @@ function Row({ o, best }: { o: Offer; best: boolean }) {
     o.match === "likely" ? "Likely match" : null,
     o.rating ? `★ ${o.rating.toFixed(1)}${o.reviews ? ` (${o.reviews})` : ""}` : null,
     o.currency !== "EUR" ? `converted from ${o.currency}` : null,
+    o.source === "lens" ? "found by Google Lens" : null,
   ].filter(Boolean).join(" · ");
   const ship = o.shipping === null ? "shipping not listed" : o.shipping === 0 ? "free shipping" : `incl. ${eur(o.shipping)} shipping`;
   const off = o.oldPrice ? Math.round((1 - o.price / o.oldPrice) * 100) : 0;
   return (
     <li>
-      <a className={`row${best ? " best" : ""}`} href={o.url} target="_blank" rel="noopener noreferrer nofollow" title={o.title}>
+      <a className={`row${best ? " best" : ""}`} href={o.source === "demo" ? undefined : o.url} target="_blank" rel="noopener noreferrer nofollow" title={o.title}>
         <span className="cc">{o.country}</span>
         <span className="shop">
           <b>{o.shop}{best && <span className="tag">Lowest</span>}{off >= 5 && <span className="tag">-{off}%</span>}</b>

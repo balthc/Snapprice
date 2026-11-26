@@ -190,3 +190,4 @@ a.row:hover{border-color:var(--green)}
 .mode.off{background:var(--pink);color:var(--pinkink)}
 .live-note{font-size:14px;color:var(--mute);display:flex;gap:8px;align-items:center}
 @media(max-width:600px){.bar>span:not(.modes){display:none}}
+.field.opts input{min-height:40px;font-size:14px}

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { Product } from "./types";
 import { anthropicKey } from "./env";
+import { IDENTIFY_PROMPT, classifyPrompt, identifyText } from "./prompts";
 
 export const hasClaude = () => Boolean(anthropicKey());
 const model = () => process.env.CLAUDE_MODEL || "claude-opus-5-5";
@@ -25,13 +26,13 @@ const ProductSchema = z.object({
   notes: z.string().describe("One short sentence for the shopper: what you recognised, or what is unclear"),
 });
 
-const IDENTIFY_PROMPT = `You identify products from screenshots so a price-comparison site can find the exact same item in other webshops.
-Look at everything in the image: logos, labels, product text, shop page titles, prices, and the item itself.
-Return the specific product (brand, official model name, colour, article code) rather than a generic description.
-Only give an article code when it is visible or you are confident it is the right one; a wrong code ruins the search.
-If the image shows several products, pick the main one.`;
-
-export async function identifyProduct(imageBase64: string, mediaType: string, hint?: string): Promise<Product & { isProduct: boolean }> {
+export async function identifyProduct(
+  imageBase64: string,
+  mediaType: string,
+  hint?: string,
+  lensTitles: string[] = []
+): Promise<Product & { isProduct: boolean }> {
+  const extra = identifyText(hint, lensTitles);
   const res = await claude().beta.messages.parse({
     model: model(),
     max_tokens: 4000,
@@ -47,7 +48,7 @@ export async function identifyProduct(imageBase64: string, mediaType: string, hi
             type: "image",
             source: { type: "base64", media_type: mediaType as "image/png" | "image/jpeg" | "image/webp" | "image/gif", data: imageBase64 },
           },
-          { type: "text", text: hint ? `Extra info from the shopper: ${hint}` : "Identify this product." },
+          { type: "text", text: extra },
         ],
       },
     ],
@@ -69,7 +70,6 @@ const MatchSchema = z.object({
 
 // Asks Claude which shop listings are the same product (not a look-alike, accessory, other colour or other model).
 export async function classifyListings(product: Product, titles: string[]): Promise<Map<number, "exact" | "likely" | "different">> {
-  const list = titles.map((t, i) => `${i}: ${t}`).join("\n");
   const res = await claude().beta.messages.parse({
     model: model(),
     max_tokens: 8000,
@@ -79,14 +79,7 @@ export async function classifyListings(product: Product, titles: string[]): Prom
     messages: [
       {
         role: "user",
-        content: `Target product: ${product.brand} ${product.model}, colour ${product.colour}${product.articleCode ? `, article code ${product.articleCode}` : ""} (${product.category}).
-
-Below are webshop listing titles in several languages. For each, say:
-- "exact": same brand, same model, same colour (or colour not stated in the title)
-- "likely": same brand and model but you cannot be sure about colour or version
-- "different": another model, another colour, a copy, an accessory, or a different product
-
-${list}`,
+        content: classifyPrompt(product, titles),
       },
     ],
   });

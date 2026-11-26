@@ -10,3 +10,6 @@ function read(...names: string[]): string | null {
 
 export const serpApiKey = () => read("SERPAPI_API_KEY", "SERPAPI_KEY", "SERP_API_KEY", "SERPAPI");
 export const anthropicKey = () => read("ANTHROPIC_API_KEY", "CLAUDE_API_KEY", "ANTHROPIC_KEY");
+export const geminiKey = () => read("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_AI_API_KEY");
+export const ebayClientId = () => read("EBAY_CLIENT_ID", "EBAY_APP_ID");
+export const ebayClientSecret = () => read("EBAY_CLIENT_SECRET", "EBAY_CERT_ID");
