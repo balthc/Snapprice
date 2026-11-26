@@ -10,6 +10,7 @@ export type PageInfo = {
   price: number | null;
   currency: string | null;
   title: string | null;
+  text: string; // product name, description and codes from the page, for the season/variant check
 };
 
 const UA = "Mozilla/5.0 (compatible; SnappriceBot/1.0; price comparison)";
@@ -115,7 +116,12 @@ export function readPage(html: string, baseUrl: string): Omit<PageInfo, "status"
   let price: number | null = null;
   let currency: string | null = null;
   let title: string | null = null;
+  const bits: string[] = [];
   for (const p of products) {
+    for (const k of ["name", "description", "sku", "mpn", "gtin", "gtin13", "gtin12", "model", "releaseDate"]) {
+      const v = p[k];
+      if (typeof v === "string" || typeof v === "number") bits.push(decode(String(v)).slice(0, 600));
+    }
     image ??= firstString(p.image);
     title ??= typeof p.name === "string" ? decode(p.name) : null;
     if (price === null) ({ price, currency } = priceFromProduct(p));
@@ -137,15 +143,16 @@ export function readPage(html: string, baseUrl: string): Omit<PageInfo, "status"
       image = null;
     }
   }
-  return { stock: readAvailability(html), image, price, currency: currency?.toUpperCase() ?? null, title };
+  bits.push(meta(html, ["og:title"]) ?? "", meta(html, ["og:description", "description"]) ?? "", decode(html.match(/<title[^>]*>([^<]{0,300})/i)?.[1] ?? ""));
+  return { stock: readAvailability(html), image, price, currency: currency?.toUpperCase() ?? null, title, text: bits.filter(Boolean).join(" | ") };
 }
 
 export async function inspectPage(url: string): Promise<PageInfo> {
   try {
     const { status, html, finalUrl } = await fetchHtml(url);
-    if (!html) return { status, stock: status === 404 || status === 410 ? "out" : "unknown", image: null, price: null, currency: null, title: null };
+    if (!html) return { status, stock: status === 404 || status === 410 ? "out" : "unknown", image: null, price: null, currency: null, title: null, text: "" };
     return { status, ...readPage(html, finalUrl) };
   } catch {
-    return { status: 0, stock: "unknown", image: null, price: null, currency: null, title: null };
+    return { status: 0, stock: "unknown", image: null, price: null, currency: null, title: null, text: "" };
   }
 }

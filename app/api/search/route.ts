@@ -8,7 +8,9 @@ import { contradicts } from "@/lib/attributes";
 import { keywordMatch, shopQuery, strongMatch } from "@/lib/strong";
 import { describe } from "@/lib/prompts";
 import { inspectPage } from "@/lib/page";
+import { variantCheck } from "@/lib/variant";
 import { hasShopify, searchShopify } from "@/lib/shopify";
+import { hasBol, searchBol } from "@/lib/bol";
 import { countryFromUrl } from "@/lib/lens";
 import { eurRates, toEur } from "@/lib/currency";
 import { verifyOffers } from "@/lib/verify";
@@ -32,6 +34,9 @@ const Body = z.object({
     features: z.array(z.string().max(120)).max(8).optional(),
     searchQuery: z.string().min(2).max(200),
     fit: z.string().max(60).optional(),
+    season: z.string().max(40).optional(),
+    kit: z.string().max(40).optional(),
+    version: z.string().max(40).optional(),
     confidence: z.enum(["high", "medium", "low"]),
     notes: z.string().max(500),
   }),
@@ -134,7 +139,7 @@ async function runSearch(input: z.infer<typeof Body>, emit: Emit): Promise<Searc
   const countries = [...new Set(picked.length ? picked : searchCountries())].slice(0, maxCountries());
   const home = homeCountry();
 
-  if (!hasShopping() && !hasEbay() && !hasFeeds()) {
+  if (!hasShopping() && !hasEbay() && !hasFeeds() && !hasBol()) {
     const demo = mockOffers();
     emit({ t: "plan", countries: countries.map((c) => c.toUpperCase()), sources: ["Demo"] });
     emit({ t: "phase", phase: "searching" });
@@ -172,6 +177,10 @@ async function runSearch(input: z.infer<typeof Body>, emit: Emit): Promise<Searc
     sources.push("eBay");
     for (const cc of ebayMarkets(countries)) jobs.push({ label: `eBay ${cc.toUpperCase()}`, cc: cc.toUpperCase(), run: searchEbay(query, cc, home) });
   }
+  if (hasBol()) {
+    sources.push("bol.com");
+    jobs.push({ label: "bol.com", cc: null, run: searchBol(query, countries) });
+  }
   if (hasShopify()) {
     sources.push("Independent shops");
     jobs.push({ label: "independent shops", cc: null, run: searchShopify(`${product.brand} ${product.model}`.trim() || product.searchQuery, countries) });
@@ -182,7 +191,7 @@ async function runSearch(input: z.infer<typeof Body>, emit: Emit): Promise<Searc
   emit({ t: "plan", countries: countries.map((c) => c.toUpperCase()), sources });
   emit({ t: "phase", phase: "searching" });
   if (lensOffers.length) emit({ t: "found", label: "Google Lens", cc: null, n: lensOffers.length, shops: lensOffers.slice(0, 4).map((o) => ({ shop: o.shop, total: o.total, thumbnail: o.thumbnail })) });
-  const quiet = new Set(["partner shop feeds", "independent shops", "shop pages"]); // bonus sources: no warning if they fail
+  const quiet = new Set(["partner shop feeds", "independent shops", "shop pages", "bol.com"]); // bonus sources: no warning if they fail
   const settled = await Promise.allSettled(
     jobs.map((j) =>
       j.run.then(
@@ -224,6 +233,13 @@ async function runSearch(input: z.infer<typeof Body>, emit: Emit): Promise<Searc
   offers = offers.map((o) => {
     const strong = strongMatch(o.title, product);
     return strong ? { ...o, strong } : o;
+  });
+  // Exact variant: a listing naming another season, kit or version is removed. One that doesn't say
+  // is "unverified" and can only reach the results if its shop page confirms it (checked below).
+  offers = offers.flatMap((o) => {
+    if (o.strong === "code") return [{ ...o, variant: "ok" as const }];
+    const v = variantCheck(o.title, product);
+    return v === "conflict" ? [] : [{ ...o, variant: v }];
   });
 
   const afterFilters = offers.length;
@@ -306,12 +322,33 @@ async function runSearch(input: z.infer<typeof Body>, emit: Emit): Promise<Searc
   // Open the shop pages we link to directly (free): confirms stock, removes sold-out offers and
   // takes the product photo from the shop's own page.
   emit({ t: "phase", phase: "stock" });
-  const toCheck = [...offers.slice(0, 24), ...similar.slice(0, 8)].filter((o) => direct(o) && (o.stock === "unknown" || !o.photo)).slice(0, 24);
+  const pending = offers.filter((o) => o.variant === "unverified");
+  offers = offers.filter((o) => o.variant !== "unverified");
+  const pendingDirect = pending.filter(direct).slice(0, 20);
+  const others = [...offers.slice(0, 20), ...similar.slice(0, 6)].filter((o) => direct(o) && (o.stock === "unknown" || !o.photo));
+  const toCheck = [...pendingDirect, ...others].slice(0, 36);
   const pages = await Promise.all(toCheck.map((o) => inspectPage(o.url)));
   const gone = new Set(toCheck.filter((_, i) => pages[i].stock === "out"));
   toCheck.forEach((o, i) => {
     if (pages[i].stock === "in") o.stock = "in";
     if (pages[i].image && !o.photo) o.photo = pages[i].image!;
+  });
+  // Season/kit not in the title: the shop page decides. Confirmed → results; other season → removed; still unknown → similar.
+  for (const o of pending) {
+    const i = toCheck.indexOf(o);
+    const v = i >= 0 && pages[i].text ? variantCheck(`${o.title} | ${pages[i].text}`, product) : "unverified";
+    if (v === "ok") {
+      o.variant = "ok";
+      offers.push(o);
+    } else if (v === "unverified") {
+      o.match = "likely";
+      similar.push(o);
+    }
+  }
+  offers.sort((a, b) => a.total - b.total);
+  similar = similar.filter((o) => {
+    const v = variantCheck(o.title, product);
+    return v !== "conflict";
   });
   if (gone.size) {
     offers = offers.filter((o) => !gone.has(o));

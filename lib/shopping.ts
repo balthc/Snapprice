@@ -1,11 +1,11 @@
 import { COUNTRIES } from "./countries";
 import { eurRates, toEur } from "./currency";
-import { searchApiKey, serpApiKey, serperKey } from "./env";
+import { scrapingdogKey, searchApiKey, serpApiKey, serperKey } from "./env";
 import type { Offer } from "./types";
 
 export const hasSerpApi = () => Boolean(serpApiKey());
 // Any Google Shopping provider configured (SerpApi, Serper or SearchAPI).
-export const hasShopping = () => Boolean(serpApiKey() || serperKey() || searchApiKey());
+export const hasShopping = () => Boolean(serpApiKey() || serperKey() || searchApiKey() || scrapingdogKey());
 
 type SerpShoppingItem = {
   title?: string;
@@ -62,6 +62,7 @@ const PROVIDERS: Provider[] = [
   { name: "SerpApi", on: () => Boolean(serpApiKey()), run: (q, cc) => serpapiCountry(q, cc) },
   { name: "Serper", on: () => Boolean(serperKey()), run: (q, cc) => serperCountry(q, cc) },
   { name: "SearchAPI", on: () => Boolean(searchApiKey()), run: (q, cc) => searchapiCountry(q, cc) },
+  { name: "ScrapingDog", on: () => Boolean(scrapingdogKey()), run: (q, cc) => scrapingdogCountry(q, cc) },
 ];
 const restingUntil = new Map<string, number>(); // provider → time it may be tried again
 
@@ -104,6 +105,43 @@ export function parsePrice(text?: string | number | null): number | null {
   }
   const v = parseFloat(n);
   return Number.isFinite(v) && v > 0 ? v : null;
+}
+
+// ScrapingDog Google Shopping API (10 credits per search; free trial credits on sign-up).
+async function scrapingdogCountry(query: string, cc: string): Promise<Offer[]> {
+  const c = COUNTRIES[cc];
+  const params = new URLSearchParams({ api_key: scrapingdogKey()!, query, country: cc === "uk" ? "gb" : cc, language: c.hl, domain: c.domain });
+  const res = await fetch(`https://api.scrapingdog.com/google_shopping?${params}`, { signal: AbortSignal.timeout(30_000) });
+  const data = (await res.json().catch(() => ({}))) as {
+    shopping_results?: { title?: string; source?: string; product_link?: string; link?: string; price?: string; extracted_price?: number; old_price_extracted?: number; thumbnail?: string; rating?: number; reviews?: string | number; extensions?: string[]; delivery?: string }[];
+    message?: string;
+    error?: string;
+  };
+  if (!res.ok) {
+    const msg = data.message ?? data.error ?? "";
+    if (isQuota(res.status, msg)) throw new QuotaError(`ScrapingDog: ${msg || res.status}`);
+    throw new Error(`ScrapingDog ${res.status}`);
+  }
+  const rates = await eurRates();
+  const out: Offer[] = [];
+  for (const it of data.shopping_results ?? []) {
+    const raw = it.extracted_price ?? parsePrice(it.price);
+    const link = it.product_link || it.link;
+    if (!raw || !it.title || !link) continue;
+    const extra = [it.delivery ?? "", ...(it.extensions ?? [])].join(" ");
+    if (OUT_OF_STOCK.test(extra)) continue;
+    const price = toEur(raw, c.currency, rates);
+    const ship = parseShipping(extra);
+    const shipping = ship === null ? null : toEur(ship, c.currency, rates);
+    const old = it.old_price_extracted ? toEur(it.old_price_extracted, c.currency, rates) : null;
+    out.push({
+      source: "google", country: cc.toUpperCase(), shop: it.source || "Shop", title: it.title, url: link,
+      thumbnail: it.thumbnail ?? null, price, oldPrice: old && old > price ? old : null, shipping,
+      total: Math.round((price + (shipping ?? 0)) * 100) / 100, currency: c.currency, rating: it.rating ?? null,
+      reviews: it.reviews ? Number(it.reviews) || null : null, match: "unsure", stock: "unknown",
+    });
+  }
+  return out;
 }
 
 async function serperCountry(query: string, cc: string): Promise<Offer[]> {

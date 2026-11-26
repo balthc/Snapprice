@@ -11,6 +11,11 @@ Brands sell many different items under one name (e.g. many different Stone Islan
 - features: 3 to 6 short visual details that tell it apart from the brand's other items, e.g. "hood with drawcords", "two large flap pockets", "padded/insulated", "no collar", "zip and press-stud front".
 - colour: the precise colour as a shopper would say it, e.g. "dark olive brown", not just "green".
 
+Many products exist in near-identical yearly versions (football shirts per season, yearly sneaker or phone models). Fill in:
+- season: the season or model year, e.g. "2026/27" or "2025", only when you can read it or are confident (sponsor, badge, kit design from Lens titles). Empty if unsure.
+- kit: for sports shirts, "home", "away", "third", "goalkeeper" or "training". Empty otherwise.
+- version: for sports shirts, "authentic" (player) or "replica" (fan) if visible. Empty otherwise.
+
 searchQuery: what a shopper would type into Google Shopping to find exactly this item.
 Use brand + official model name/code if you know it; otherwise brand + productType + colour + the most telling feature.
 No sizes, no filler. Example: "Stone Island hooded padded jacket dark brown" rather than "Stone Island jacket".`;
@@ -32,6 +37,9 @@ export function describe(product: Product): string {
     product.productType ? `type: ${product.productType}` : "",
     product.colour && product.colour !== "not specified" ? `colour: ${product.colour}` : "",
     product.articleCode ? `article code: ${product.articleCode}` : "",
+    product.season ? `season/year: ${product.season} (another season or year is a different product)` : "",
+    product.kit ? `kit: ${product.kit}` : "",
+    product.version ? `version: ${product.version}` : "",
     product.features?.length ? `details: ${product.features.join("; ")}` : "",
   ]
     .filter(Boolean)

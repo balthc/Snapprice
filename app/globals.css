@@ -141,8 +141,8 @@ footer a{text-decoration:none}
 .specgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .specgrid label{display:grid;gap:5px;font-size:13px;font-weight:700;color:var(--mute)}
 .specgrid label small{font-weight:400}
-.specgrid input{padding:11px 14px;border-radius:12px;border:1.5px solid var(--line);background:var(--bg);font-size:15px;font-weight:400;color:var(--ink)}
-.specgrid input:focus{outline:none;border-color:var(--ink)}
+.specgrid input,.specgrid select{padding:11px 14px;border-radius:12px;border:1.5px solid var(--line);background:var(--bg);font-size:15px;font-weight:400;color:var(--ink)}
+.specgrid input:focus,.specgrid select:focus{outline:none;border-color:var(--ink)}
 @media(max-width:560px){.specgrid{grid-template-columns:minmax(0,1fr)}}
 
 /* country picker */

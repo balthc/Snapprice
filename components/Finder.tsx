@@ -10,7 +10,7 @@ import LiveSearch, { type Live } from "./LiveSearch";
 type Stage = "idle" | "identifying" | "confirm" | "identified" | "searching" | "checking" | "done";
 
 // Fields the shopper checks before searching.
-type Spec = { brand: string; type: string; colour: string; model: string; fit: string };
+type Spec = { brand: string; type: string; colour: string; model: string; fit: string; season: string; kit: string; version: string };
 
 function buildQuery(s: Spec): string {
   const parts: string[] = [];
@@ -96,7 +96,7 @@ export default function Finder() {
   const [live, setLive] = useState<Live | null>(null);
   const [shot, setShot] = useState<{ data: string; mime: string } | null>(null);
   const [showSimilar, setShowSimilar] = useState(false);
-  const [spec, setSpec] = useState<Spec>({ brand: "", type: "", colour: "", model: "", fit: "" });
+  const [spec, setSpec] = useState<Spec>({ brand: "", type: "", colour: "", model: "", fit: "", season: "", kit: "", version: "" });
   const [checkNote, setCheckNote] = useState<string | null>(null);
   const [recognisedBy, setRecognisedBy] = useState<string | null>(null);
   const [over, setOver] = useState(false);
@@ -287,6 +287,9 @@ export default function Finder() {
         colour: p.colour && p.colour !== "not specified" ? p.colour : colour.trim(),
         model: [p.model?.toLowerCase().startsWith(p.brand.toLowerCase()) ? p.model.slice(p.brand.length).trim() : p.model, p.articleCode].filter(Boolean).join(" "),
         fit: "",
+        season: p.season || "",
+        kit: p.kit || "",
+        version: p.version || "",
       });
       setStage("confirm");
     } catch (e) {
@@ -331,6 +334,9 @@ export default function Finder() {
       productType: spec.type.trim(),
       colour: spec.colour.trim() || "not specified",
       fit: spec.fit.trim() || undefined,
+      season: spec.season.trim() || undefined,
+      kit: spec.kit || undefined,
+      version: spec.version || undefined,
       searchQuery: q,
     };
     setProduct(p);
@@ -414,7 +420,21 @@ export default function Finder() {
             <label>Model or code <small>(if you know it)</small><input value={spec.model} onChange={(e) => setSpec({ ...spec, model: e.target.value })} placeholder="e.g. Scanton" /></label>
             <label>Fit <small>(optional)</small><input value={spec.fit} onChange={(e) => setSpec({ ...spec, fit: e.target.value })} placeholder="e.g. slim, regular, wide" /></label>
             <label>Size <small>(optional)</small><input value={size} onChange={(e) => setSize(e.target.value)} placeholder="e.g. W32 L32, M, 43" /></label>
+            <label>Season or year <small>(only this one is shown)</small><input value={spec.season} onChange={(e) => setSpec({ ...spec, season: e.target.value })} placeholder="e.g. 2026/27 or 2025" /></label>
+            <label>Kit <small>(sports shirts)</small>
+              <select value={spec.kit} onChange={(e) => setSpec({ ...spec, kit: e.target.value })}>
+                <option value="">Not applicable</option><option value="home">Home</option><option value="away">Away</option><option value="third">Third</option><option value="goalkeeper">Goalkeeper</option><option value="training">Training</option>
+              </select>
+            </label>
+            <label>Version <small>(sports shirts)</small>
+              <select value={spec.version} onChange={(e) => setSpec({ ...spec, version: e.target.value })}>
+                <option value="">Any</option><option value="replica">Replica (fan)</option><option value="authentic">Authentic (player)</option>
+              </select>
+            </label>
           </div>
+          {(spec.season || spec.kit) && (
+            <p className="note">Strict mode: only shops that confirm {[spec.season, spec.kit, spec.version].filter(Boolean).join(" · ")} are shown. Listings that don&apos;t say which season go under &quot;similar&quot;.</p>
+          )}
           <p className="muted">We&apos;ll search for: <b>{buildQuery(spec) || "…"}</b></p>
           <button className="btn btn-main" type="submit" disabled={buildQuery(spec).length < 3}>Find the cheapest shops</button>
         </form>
@@ -427,6 +447,7 @@ export default function Finder() {
               <span className="muted">Looking for</span>
               <h3>{title}{product.colour && product.colour !== "not specified" ? ` · ${product.colour}` : ""}</h3>
               {product.articleCode && <span className="tag">{product.articleCode}</span>}
+              {[product.season, product.kit, product.version].some(Boolean) && <span className="tag green">{[product.season, product.kit, product.version].filter(Boolean).join(" · ")}</span>}
               {demo && <span className="tag pink">Demo</span>}
               {product.confidence === "low" && <span className="tag pink">Not sure, please check</span>}
               <details className="fix">
@@ -470,7 +491,7 @@ export default function Finder() {
               )}
               {offers.length ? (
                 <ol className="rows">
-                  {offers.map((o, i) => <Row key={o.url + i} o={o} best={i === 0} />)}
+                  {offers.map((o, i) => <Row key={o.url + i} o={o} best={i === 0} variant={product?.season || product?.kit ? [product.season, product.kit].filter(Boolean).join(" ") : null} />)}
                 </ol>
               ) : (
                 <p className="muted">
@@ -509,7 +530,7 @@ export default function Finder() {
   );
 }
 
-function Row({ o, best }: { o: Offer; best: boolean }) {
+function Row({ o, best, variant = null }: { o: Offer; best: boolean; variant?: string | null }) {
   const ship = o.shipping === null ? "shipping not listed" : o.shipping === 0 ? "free shipping" : `incl. ${eur(o.shipping)} shipping`;
   const off = o.oldPrice ? Math.round((1 - o.price / o.oldPrice) * 100) : 0;
   const body = (
@@ -523,6 +544,8 @@ function Row({ o, best }: { o: Offer; best: boolean }) {
           {o.seen && <span className="tag green">Photo match</span>}
           {!o.seen && o.strong === "code" && <span className="tag green">Article code match</span>}
           {!o.seen && o.strong === "model" && <span className="tag green">Model name match</span>}
+          {variant && o.variant === "ok" && <span className="tag green">{variant} confirmed</span>}
+          {o.variant === "unverified" && <span className="tag">Season not confirmed</span>}
           {o.stock === "in" && <span className="tag green">In stock</span>}
           {off >= 5 && <span className="tag pink">-{off}%</span>}
           <span className="tag">{o.country}</span>

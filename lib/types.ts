@@ -7,6 +7,9 @@ export type Product = {
   productType?: string; // e.g. "hooded padded jacket"
   features?: string[]; // visual details that tell it apart, e.g. "two flap pockets"
   fit?: string; // e.g. "slim", "regular", "wide"
+  season?: string; // season or model year, e.g. "2026/27" or "2025"
+  kit?: string; // home / away / third (sports shirts)
+  version?: string; // authentic (player) or replica (fan)
   searchQuery: string;
   confidence: "high" | "medium" | "low";
   notes: string;
@@ -29,6 +32,7 @@ export type Offer = {
   match: "exact" | "likely" | "unsure";
   stock: "in" | "unknown"; // "in" = confirmed in stock; out-of-stock offers are removed
   photo?: string; // product photo taken from the shop's own page (og:image / schema.org)
+  variant?: "ok" | "unverified"; // season/kit/version confirmed, or not stated by the shop
   strong?: "code" | "model"; // article code or full model name found in the title
   seen?: boolean; // photo compared with the shopper's screenshot and judged the same product
 };
