@@ -458,6 +458,7 @@ export default function Finder() {
                 {!result.demo && (
                   <p className="muted small">
                     Checked by: title {result.checks?.textCheck ?? "search words only"} · photo {result.checks?.photoCheck ?? "not compared"}
+                    {result.funnel && ` · ${result.funnel.listings} listings found, ${result.funnel.afterFilters} after type and colour filter, ${result.funnel.matched} matched${result.funnel.unanswered ? ` · ${result.funnel.unanswered} sources didn't answer` : ""}`}
                   </p>
                 )}
               </div>

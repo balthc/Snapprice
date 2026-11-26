@@ -217,6 +217,7 @@ async function runSearch(input: z.infer<typeof Body>, emit: Emit): Promise<Searc
     );
   }
 
+  const listings = offers.length;
   // Hard filters (free, always on): drop listings whose title names another kind of item or another colour.
   offers = offers.filter((o) => !contradicts(o.title, product));
   // Strong text evidence: the article code or the full model name is in the title.
@@ -225,6 +226,7 @@ async function runSearch(input: z.infer<typeof Body>, emit: Emit): Promise<Searc
     return strong ? { ...o, strong } : o;
   });
 
+  const afterFilters = offers.length;
   // Keep only listings of the same product: checked by AI if one is set up, otherwise by search words.
   emit({ t: "phase", phase: "matching" });
   const provider = aiProvider();
@@ -324,6 +326,7 @@ async function runSearch(input: z.infer<typeof Body>, emit: Emit): Promise<Searc
     offers: offers.slice(0, 40),
     similar: dedupe(similar).sort((a, b) => a.total - b.total).slice(0, 20),
     visualCheck,
+    funnel: { listings, afterFilters, matched: offers.length, unanswered: failed.length },
     checks: { textCheck: checked ? (provider === "claude" ? "Claude" : "Gemini") : null, photoCheck },
     countries: countries.map((c) => c.toUpperCase()),
     sources,

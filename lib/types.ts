@@ -37,6 +37,7 @@ export type SearchResult = {
   offers: Offer[];
   similar: Offer[]; // same brand and kind of item, but not confirmed as the same product
   visualCheck: boolean; // true when result photos were compared with the screenshot
+  funnel?: { listings: number; afterFilters: number; matched: number; unanswered: number }; // where offers were lost
   checks?: { textCheck: string | null; photoCheck: string | null }; // which match checks actually ran
   countries: string[];
   sources: string[];
