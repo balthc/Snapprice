@@ -6,6 +6,7 @@ export type Product = {
   category: string;
   productType?: string; // e.g. "hooded padded jacket"
   features?: string[]; // visual details that tell it apart, e.g. "two flap pockets"
+  fit?: string; // e.g. "slim", "regular", "wide"
   searchQuery: string;
   confidence: "high" | "medium" | "low";
   notes: string;

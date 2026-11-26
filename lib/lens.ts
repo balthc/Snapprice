@@ -2,6 +2,7 @@
 // Costs 1 SerpApi search per screenshot. Image upload to SerpApi is free (max 500 KB, kept 10 minutes).
 import { eurRates, toEur } from "./currency";
 import { serpApiKey } from "./env";
+import { coloursOf, kindOf } from "./attributes";
 import type { Offer, Product } from "./types";
 
 type LensMatch = {
@@ -94,14 +95,24 @@ export function productFromTitles(titles: string[]): Product | null {
   let words = agreed(best);
   if (words.length < 2) words = best.split(" ").slice(0, 6);
   const query = words.slice(0, 8).join(" ");
+  // Most common item kind and colour across the Lens titles, as a starting point for the shopper to check.
+  const top = (xs: string[]) => {
+    const c = new Map<string, number>();
+    xs.forEach((x) => c.set(x, (c.get(x) ?? 0) + 1));
+    return [...c.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  };
+  const kind = top(clean.map(kindOf).filter((k): k is string => Boolean(k)));
+  const colour = top(clean.flatMap(coloursOf));
   return {
     brand: words[0] ?? "",
     model: query,
-    colour: "not specified",
+    colour: colour ?? "not specified",
     articleCode: null,
-    category: "product",
+    category: kind ?? "product",
+    productType: kind ?? "",
+    features: [],
     searchQuery: query,
     confidence: clean.length >= 4 && agreed(best).length >= 2 ? "medium" : "low",
-    notes: "Recognised with Google Lens. Check the name and add the colour if needed.",
+    notes: "Recognised with Google Lens. Please check the details below.",
   };
 }

@@ -7,8 +7,9 @@ Screenshot a product, and Snapprice finds the webshop in Europe that sells that 
 1. You drop in a screenshot (or type a product name), optionally with colour and size.
 2. **Google Lens** (through SerpApi) finds the product online. If a free **Gemini** key (or a paid Claude key) is set, the AI reads the screenshot and the Lens results and names the exact product: brand, model, colour and article code.
 3. The site searches **Google Shopping** in several countries at once (NL, DE, BE, FR, IT, ES by default), plus **eBay** in those countries if you add the free eBay keys, plus the shop pages Google Lens found.
-4. Listings that aren't the same product are thrown out. With Gemini (or Claude) set up this is strict: first the listing titles are checked, then the product photos of the cheapest candidates are compared with your screenshot. Only photo-confirmed matches are shown as results; look-alikes go behind a "Show similar items" button. Without an AI key, matching uses the search words only and is much less precise.
-5. You get the shops ranked by price including shipping, in euros. Clicking a result opens that shop's own product page.
+4. Before searching, the shopper checks what was recognised (brand, type of item, colour, model, fit, size) and corrects it.
+5. Listings that aren't the same product are thrown out. Always (free): titles that name another kind of item (shorts vs trousers) or another colour are dropped, and in the shopper's browser each result photo is compared with the screenshot, on colour and on look with the open-source Marqo-FashionCLIP model (downloads ~90 MB once, then cached). With Gemini (or Claude) set up this is strict: first the listing titles are checked, then the product photos of the cheapest candidates are compared with your screenshot. Only photo-confirmed matches are shown as results; look-alikes go behind a "Show similar items" button. Without an AI key, matching uses the search words only and is much less precise.
+6. You get the shops ranked by price including shipping, in euros. Clicking a result opens that shop's own product page.
 
 Without any keys the site runs in **demo mode** with sample results.
 

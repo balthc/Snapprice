@@ -4,6 +4,7 @@ import { aiProvider, classify } from "@/lib/ai";
 import { homeCountry, searchCountries } from "@/lib/countries";
 import { ebayMarkets, hasEbay, searchEbay } from "@/lib/ebay";
 import { mockOffers } from "@/lib/mock";
+import { contradicts } from "@/lib/attributes";
 import { describe } from "@/lib/prompts";
 import { checkStock } from "@/lib/stock";
 import { verifyOffers } from "@/lib/verify";
@@ -25,6 +26,7 @@ const Body = z.object({
     productType: z.string().max(120).optional(),
     features: z.array(z.string().max(120)).max(8).optional(),
     searchQuery: z.string().min(2).max(200),
+    fit: z.string().max(60).optional(),
     confidence: z.enum(["high", "medium", "low"]),
     notes: z.string().max(500),
   }),
@@ -107,6 +109,9 @@ export async function POST(req: Request) {
       warnings.push(`Could not check ${jobs[i].label} this time.`);
     }
   });
+
+  // Hard filters (free, always on): drop listings whose title names another kind of item or another colour.
+  offers = offers.filter((o) => !contradicts(o.title, product));
 
   // Keep only listings of the same product: checked by AI if one is set up, otherwise by search words.
   const provider = aiProvider();

@@ -128,3 +128,13 @@ footer a{text-decoration:none}
 .close h1{font-size:clamp(40px,7vw,72px)}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 .rows.similar .row{opacity:.85}
+
+/* confirm step */
+.confirm{max-width:720px;margin:24px auto 0;display:grid;gap:16px;padding:24px;border:1.5px solid var(--line);border-radius:22px;background:var(--panel);text-align:left}
+.confirm h2{font-size:22px}
+.specgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.specgrid label{display:grid;gap:5px;font-size:13px;font-weight:700;color:var(--mute)}
+.specgrid label small{font-weight:400}
+.specgrid input{padding:11px 14px;border-radius:12px;border:1.5px solid var(--line);background:var(--bg);font-size:15px;font-weight:400;color:var(--ink)}
+.specgrid input:focus{outline:none;border-color:var(--ink)}
+@media(max-width:560px){.specgrid{grid-template-columns:minmax(0,1fr)}}

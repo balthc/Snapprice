@@ -3,8 +3,26 @@
 import { useEffect, useRef, useState } from "react";
 import type { Offer, Product, SearchResult } from "@/lib/types";
 import { FREE_SEARCHES_PER_MONTH } from "@/lib/site";
+import { scorePhotos } from "@/lib/photocheck";
 
-type Stage = "idle" | "identifying" | "identified" | "searching" | "done";
+type Stage = "idle" | "identifying" | "confirm" | "identified" | "searching" | "checking" | "done";
+
+// Fields the shopper checks before searching.
+type Spec = { brand: string; type: string; colour: string; model: string; fit: string };
+
+function buildQuery(s: Spec): string {
+  const parts: string[] = [];
+  const add = (x: string) => {
+    const v = x.trim();
+    if (v && !parts.join(" ").toLowerCase().includes(v.toLowerCase())) parts.push(v);
+  };
+  add(s.brand);
+  add(s.model);
+  add(s.type);
+  add(s.fit);
+  add(s.colour);
+  return parts.join(" ").replace(/\s+/g, " ").trim();
+}
 
 const eur = (n: number) => "€" + n.toFixed(2);
 const ENFORCE_LIMIT = process.env.NEXT_PUBLIC_ENFORCE_FREE_LIMIT === "true";
@@ -74,6 +92,8 @@ export default function Finder() {
   const [lens, setLens] = useState<Offer[]>([]);
   const [shot, setShot] = useState<{ data: string; mime: string } | null>(null);
   const [showSimilar, setShowSimilar] = useState(false);
+  const [spec, setSpec] = useState<Spec>({ brand: "", type: "", colour: "", model: "", fit: "" });
+  const [checkNote, setCheckNote] = useState<string | null>(null);
   const [recognisedBy, setRecognisedBy] = useState<string | null>(null);
   const [over, setOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -82,7 +102,7 @@ export default function Finder() {
   useEffect(() => {
     fetch("/api/status", { cache: "no-store" }).then((r) => r.json()).then(setStatus).catch(() => {});
   }, []);
-  const busy = stage === "identifying" || stage === "searching";
+  const busy = stage === "identifying" || stage === "searching" || stage === "checking";
 
   // Paste a screenshot anywhere on the page (Ctrl/Cmd+V).
   useEffect(() => {
@@ -116,13 +136,44 @@ export default function Finder() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Search failed.");
-      setResult(data);
       if (data.demo) setDemo(true);
       quota.bump();
+      if (image && !data.visualCheck && !data.demo && data.offers.length) {
+        setResult(data);
+        setStage("checking");
+        setResult(await photoCheck(data, image));
+      } else {
+        setResult(data);
+      }
       setStage("done");
     } catch (e) {
       setError((e as Error).message);
       setStage("identified");
+    }
+  }
+
+  // Free in-browser photo check (colour + FashionCLIP): photos that don't match move to "similar".
+  async function photoCheck(data: SearchResult, image: { data: string; mime: string }): Promise<SearchResult> {
+    const list = data.offers.slice(0, 30);
+    const saveData = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
+    setCheckNote(`Comparing ${list.length} photos with your screenshot…`);
+    try {
+      const scores = await scorePhotos(`data:${image.mime};base64,${image.data}`, list.map((o) => o.thumbnail), !saveData, (n) =>
+        setCheckNote(`Comparing photos with your screenshot… ${n} of ${list.length}`)
+      );
+      const keep: Offer[] = [];
+      const moved: Offer[] = [];
+      list.forEach((o, i) => {
+        const sc = scores[i];
+        if (!sc.pass) moved.push({ ...o, match: "likely" });
+        else keep.push(sc.look !== null || sc.colour !== null ? { ...o, seen: true } : o);
+      });
+      setCheckNote(null);
+      return { ...data, offers: keep, similar: [...moved, ...data.similar].sort((a, b) => a.total - b.total), visualCheck: true };
+    } catch (e) {
+      console.warn("photo check failed", e);
+      setCheckNote(null);
+      return data;
     }
   }
 
@@ -154,8 +205,14 @@ export default function Finder() {
       setLens(data.lensOffers ?? []);
       setRecognisedBy(data.recognisedBy ?? null);
       if (data.demo) setDemo(true);
-      setStage("identified");
-      await search(p, data.lensOffers ?? [], img);
+      setSpec({
+        brand: p.brand || "",
+        type: p.productType || (p.category !== "product" ? p.category : ""),
+        colour: p.colour && p.colour !== "not specified" ? p.colour : colour.trim(),
+        model: [p.model?.toLowerCase().startsWith(p.brand.toLowerCase()) ? p.model.slice(p.brand.length).trim() : p.model, p.articleCode].filter(Boolean).join(" "),
+        fit: "",
+      });
+      setStage("confirm");
     } catch (e) {
       setError((e as Error).message);
       setStage("idle");
@@ -183,6 +240,24 @@ export default function Finder() {
     setRecognisedBy(null);
     setProduct(full);
     search(full, [], null);
+  }
+
+  function onConfirm(e: React.FormEvent) {
+    e.preventDefault();
+    if (!product || busy) return;
+    const q = buildQuery(spec);
+    if (q.length < 3) return;
+    const p: Product = {
+      ...product,
+      brand: spec.brand.trim(),
+      model: spec.model.trim() || spec.type.trim(),
+      productType: spec.type.trim(),
+      colour: spec.colour.trim() || "not specified",
+      fit: spec.fit.trim() || undefined,
+      searchQuery: q,
+    };
+    setProduct(p);
+    search(p);
   }
 
   function edit(field: keyof Product, value: string) {
@@ -216,7 +291,7 @@ export default function Finder() {
             </span>
           )}
           <span>
-            <b>{stage === "identifying" ? "Recognising the product…" : stage === "searching" ? "Checking shops and stock…" : preview ? "Drop another screenshot" : "Drop a screenshot"}</b>
+            <b>{stage === "identifying" ? "Recognising the product…" : stage === "searching" ? "Checking shops and stock…" : stage === "checking" ? "Comparing photos…" : preview ? "Drop another screenshot" : "Drop a screenshot"}</b>
             <br />
             <small>{busy ? "This takes 10 to 30 seconds" : "or click to choose one, or paste it. Shop pages, Instagram posts and photos all work."}</small>
           </span>
@@ -242,7 +317,26 @@ export default function Finder() {
         {error && <p className="err" role="alert">{error}</p>}
       </div>
 
-      {(product || stage === "searching") && (
+      {stage === "confirm" && product && (
+        <form className="confirm" onSubmit={onConfirm}>
+          <div>
+            <h2>Is this what you&apos;re looking for?</h2>
+            <p className="muted">Check and correct the details. The more exact, the better the results.</p>
+          </div>
+          <div className="specgrid">
+            <label>Brand<input value={spec.brand} onChange={(e) => setSpec({ ...spec, brand: e.target.value })} placeholder="e.g. Tommy Jeans" /></label>
+            <label>Type of item<input value={spec.type} onChange={(e) => setSpec({ ...spec, type: e.target.value })} placeholder="e.g. chino trousers" /></label>
+            <label>Colour<input value={spec.colour} onChange={(e) => setSpec({ ...spec, colour: e.target.value })} placeholder="e.g. navy" /></label>
+            <label>Model or code <small>(if you know it)</small><input value={spec.model} onChange={(e) => setSpec({ ...spec, model: e.target.value })} placeholder="e.g. Scanton" /></label>
+            <label>Fit <small>(optional)</small><input value={spec.fit} onChange={(e) => setSpec({ ...spec, fit: e.target.value })} placeholder="e.g. slim, regular, wide" /></label>
+            <label>Size <small>(optional)</small><input value={size} onChange={(e) => setSize(e.target.value)} placeholder="e.g. W32 L32, M, 43" /></label>
+          </div>
+          <p className="muted">We&apos;ll search for: <b>{buildQuery(spec) || "…"}</b></p>
+          <button className="btn btn-main" type="submit" disabled={buildQuery(spec).length < 3}>Find the cheapest shops</button>
+        </form>
+      )}
+
+      {stage !== "confirm" && (product || stage === "searching") && (
         <div className={`results${stage === "searching" ? " loading" : ""}`} aria-live="polite">
           {product && (
             <div className="matched">
@@ -261,6 +355,7 @@ export default function Finder() {
             </div>
           )}
 
+          {stage === "checking" && checkNote && <p className="note"><span className="spinner" />{checkNote}</p>}
           {stage === "searching" && (
             <div className="rows"><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></div>
           )}
@@ -271,7 +366,13 @@ export default function Finder() {
                 <p className="err"><b>Sample results, not real shops.</b> Live prices switch on once a SerpApi key is added.</p>
               )}
               <div className="res-head">
-                <h2>{offers.length ? `${offers.length} ${offers.length === 1 ? "shop has" : "shops have"} this exact item` : "No exact match found"}</h2>
+                <h2>
+                  {offers.length
+                    ? result.visualCheck
+                      ? `${offers.length} ${offers.length === 1 ? "shop has" : "shops have"} this item`
+                      : `${offers.length} ${offers.length === 1 ? "offer" : "offers"} found`
+                    : "No exact match found"}
+                </h2>
                 <p className="muted">Cheapest first, shipping included · {result.countries.join(" ")}</p>
               </div>
               {saving && saving > 1 && (
@@ -291,7 +392,7 @@ export default function Finder() {
                 </p>
               )}
               {result.visualCheck && offers.length > 0 && (
-                <p className="note">Every result above was photo-checked against your screenshot.</p>
+                <p className="note">Results were photo-checked against your screenshot. Items that look different are under &quot;similar items&quot;.</p>
               )}
               {result.similar.length > 0 && (
                 showSimilar ? (
