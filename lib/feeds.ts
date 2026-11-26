@@ -11,7 +11,7 @@ export const hasFeeds = () => Boolean(databaseUrl());
 let sql: ReturnType<typeof postgres> | null = null;
 function db() {
   const url = databaseUrl()!;
-  sql ??= postgres(url, { max: 3, idle_timeout: 20, prepare: false, ssl: /sslmode=disable/.test(url) ? false : "require" });
+  sql ??= postgres(url, { max: 3, idle_timeout: 20, prepare: false, connect_timeout: 5, ssl: /sslmode=disable/.test(url) ? false : "require" });
   return sql;
 }
 
@@ -20,7 +20,18 @@ type Row = {
   old_price: string | null; shipping: string | null; currency: string; url: string; image: string | null;
 };
 
+// Never let the partner database slow down or break a search: give up after 8 seconds.
 export async function searchFeeds(product: Product, countries: string[]): Promise<Offer[]> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("feeds timeout")), 8000); });
+  try {
+    return await Promise.race([queryFeeds(product, countries), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function queryFeeds(product: Product, countries: string[]): Promise<Offer[]> {
   const words = product.searchQuery
     .toLowerCase()
     .split(/[^a-z0-9à-ÿ]+/i)

@@ -5,6 +5,7 @@ import { COUNTRIES, homeCountry, maxCountries, searchCountries } from "@/lib/cou
 import { ebayMarkets, hasEbay, searchEbay } from "@/lib/ebay";
 import { mockOffers } from "@/lib/mock";
 import { contradicts } from "@/lib/attributes";
+import { strongMatch } from "@/lib/strong";
 import { describe } from "@/lib/prompts";
 import { checkStock } from "@/lib/stock";
 import { verifyOffers } from "@/lib/verify";
@@ -114,12 +115,14 @@ export async function POST(req: Request) {
     if (s.status === "fulfilled") offers.push(...s.value);
     else {
       console.error(jobs[i].label, s.reason);
+      // The partner database is a bonus source: if it's down or not set up yet, shoppers shouldn't see a warning.
+      if (jobs[i].label === "partner shop feeds") return;
       failed.push(jobs[i].label.replace("Google Shopping ", ""));
     }
   });
   if (failed.length) {
     warnings.push(
-      failed.length === jobs.length
+      failed.length === jobs.filter((j) => j.label !== "partner shop feeds").length
         ? `The price services didn't answer this time${activeProviders().length ? " (their free allowance may be used up)" : ""}. Please try again later.`
         : `Couldn't check: ${failed.join(", ")}.`
     );
@@ -127,6 +130,11 @@ export async function POST(req: Request) {
 
   // Hard filters (free, always on): drop listings whose title names another kind of item or another colour.
   offers = offers.filter((o) => !contradicts(o.title, product));
+  // Strong text evidence: the article code or the full model name is in the title.
+  offers = offers.map((o) => {
+    const strong = strongMatch(o.title, product);
+    return strong ? { ...o, strong } : o;
+  });
 
   // Keep only listings of the same product: checked by AI if one is set up, otherwise by search words.
   const provider = aiProvider();
@@ -136,7 +144,12 @@ export async function POST(req: Request) {
     try {
       const verdicts = await classify(product, offers.map((o) => `[${o.country}] ${o.title}`));
       offers = offers
-        .map((o, i) => ({ ...o, match: (verdicts.get(i) ?? "different") as Offer["match"] | "different" }))
+        .map((o, i) => {
+          const v = (verdicts.get(i) ?? "different") as Offer["match"] | "different";
+          // An article code is decisive; a full model name upgrades "likely" (but never overrides "different").
+          const match = o.strong === "code" ? "exact" : o.strong === "model" && v === "likely" ? "exact" : v;
+          return { ...o, match };
+        })
         .filter((o): o is Offer => o.match !== "different");
       checked = true;
     } catch (e) {
@@ -144,7 +157,8 @@ export async function POST(req: Request) {
     }
   }
   if (!checked && offers.length) {
-    offers = keywordFilter(offers, product.searchQuery);
+    const strong = offers.filter((o) => o.strong).map((o) => ({ ...o, match: "exact" as const }));
+    offers = dedupe([...strong, ...keywordFilter(offers.filter((o) => !o.strong), product.searchQuery)]);
     warnings.push(
       provider
         ? "The exact-match check didn't work this time, so a few results may be similar items."
@@ -170,13 +184,25 @@ export async function POST(req: Request) {
 
   // Visual check: compare the photos of the cheapest candidates with the shopper's screenshot.
   let visualCheck = false;
+  let photoCheck: string | null = null;
   if (image && provider) {
+    const prevOffers = offers, prevSimilar = similar;
     const pool = dedupe([...offers, ...similar]).sort((a, b) => a.total - b.total).slice(0, 32);
     try {
       const verdicts = await verifyOffers(image, describe(product), pool);
-      offers = pool.filter((_, i) => verdicts[i] === "same").map((o) => ({ ...o, seen: true, match: "exact" as const }));
-      similar = pool.filter((_, i) => verdicts[i] === "similar" || verdicts[i] === "unchecked").map((o) => ({ ...o, match: "likely" as const }));
+      // Photos confirm; an article code in the title also counts as confirmed; a full model name counts
+      // unless the photo is clearly another product; a photo we couldn't load keeps the title verdict.
+      const keep = (o: Offer, v: string) =>
+        v === "same" || o.strong === "code" || (o.strong === "model" && v !== "different") || (v === "unchecked" && o.match === "exact");
+      offers = pool.filter((o, i) => keep(o, verdicts[i])).map((o) => ({ ...o, seen: verdicts[pool.indexOf(o)] === "same", match: "exact" as const }));
+      similar = pool.filter((o, i) => !keep(o, verdicts[i]) && (verdicts[i] === "similar" || verdicts[i] === "unchecked")).map((o) => ({ ...o, match: "likely" as const }));
+      // Offers beyond the 32 checked keep their title verdict.
+      const inPool = new Set(pool);
+      offers.push(...prevOffers.filter((o) => !inPool.has(o)));
+      similar.push(...prevSimilar.filter((o) => !inPool.has(o)));
+      offers = dedupe(offers).sort((a, b) => a.total - b.total);
       visualCheck = true;
+      photoCheck = provider === "claude" ? "Claude" : "Gemini";
     } catch (e) {
       console.error("visual check failed", e);
       warnings.push("The photo comparison didn't work this time, so results are matched on their titles only.");
@@ -201,6 +227,7 @@ export async function POST(req: Request) {
     offers: offers.slice(0, 40),
     similar: dedupe(similar).sort((a, b) => a.total - b.total).slice(0, 20),
     visualCheck,
+    checks: { textCheck: checked ? (provider === "claude" ? "Claude" : "Gemini") : null, photoCheck },
     countries: countries.map((c) => c.toUpperCase()),
     sources,
     usualPrice,

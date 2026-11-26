@@ -146,3 +146,4 @@ footer a{text-decoration:none}
 .cpresets,.cchips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{font-size:13px;font-weight:700;padding:6px 11px;border-radius:999px;border:1.5px solid var(--line);background:var(--bg);color:var(--mute);cursor:pointer}
 .chip.on{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+p.muted.small{font-size:12px;margin-top:2px;opacity:.8}

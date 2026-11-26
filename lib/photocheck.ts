@@ -5,8 +5,8 @@
 //    score between each result photo and the screenshot. The model (~90 MB) downloads once, then is cached.
 
 const MODEL = "Marqo/marqo-fashionCLIP";
-export const COLOUR_MAX_DIFF = 22; // colour difference (ΔE) above this = other colour
-export const LOOK_MIN = 0.8; // FashionCLIP similarity below this = other item
+export const COLOUR_MAX_DIFF = 32; // colour difference (ΔE) above this = other colour
+export const LOOK_MIN = 0.72; // FashionCLIP similarity below this = other item
 
 export const proxied = (url: string) => `/api/img?u=${encodeURIComponent(url)}`;
 

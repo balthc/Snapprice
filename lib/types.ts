@@ -28,6 +28,7 @@ export type Offer = {
   reviews: number | null;
   match: "exact" | "likely" | "unsure";
   stock: "in" | "unknown"; // "in" = confirmed in stock; out-of-stock offers are removed
+  strong?: "code" | "model"; // article code or full model name found in the title
   seen?: boolean; // photo compared with the shopper's screenshot and judged the same product
 };
 
@@ -35,6 +36,7 @@ export type SearchResult = {
   offers: Offer[];
   similar: Offer[]; // same brand and kind of item, but not confirmed as the same product
   visualCheck: boolean; // true when result photos were compared with the screenshot
+  checks?: { textCheck: string | null; photoCheck: string | null }; // which match checks actually ran
   countries: string[];
   sources: string[];
   usualPrice: number | null;

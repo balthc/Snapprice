@@ -160,15 +160,23 @@ export default function Finder() {
     }
   }
 
-  // Free in-browser photo check (colour + FashionCLIP): photos that don't match move to "similar".
+  // Free in-browser photo check (colour + FashionCLIP): photos that clearly don't match move to "similar".
+  // Listings with the article code or full model name in their title are trusted and not demoted.
   async function photoCheck(data: SearchResult, image: { data: string; mime: string }): Promise<SearchResult> {
-    const list = data.offers.slice(0, 30);
+    const list = data.offers.slice(0, 30).filter((o) => !o.strong);
+    const rest = data.offers.filter((o) => !list.includes(o));
+    if (!list.length) return data;
     const saveData = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
     setCheckNote(`Comparing ${list.length} photos with your screenshot…`);
     try {
       const scores = await scorePhotos(`data:${image.mime};base64,${image.data}`, list.map((o) => o.thumbnail), !saveData, (n) =>
         setCheckNote(`Comparing photos with your screenshot… ${n} of ${list.length}`)
       );
+      setCheckNote(null);
+      const lookRan = scores.some((sc) => sc.look !== null);
+      const checks = { textCheck: data.checks?.textCheck ?? null, photoCheck: lookRan ? "FashionCLIP + colour (in your browser)" : "colour only (in your browser)" };
+      // If every photo "fails", the screenshot itself is probably the problem (model, background, crop): don't trust the check.
+      if (scores.every((sc) => !sc.pass)) return { ...data, checks };
       const keep: Offer[] = [];
       const moved: Offer[] = [];
       list.forEach((o, i) => {
@@ -176,8 +184,8 @@ export default function Finder() {
         if (!sc.pass) moved.push({ ...o, match: "likely" });
         else keep.push(sc.look !== null || sc.colour !== null ? { ...o, seen: true } : o);
       });
-      setCheckNote(null);
-      return { ...data, offers: keep, similar: [...moved, ...data.similar].sort((a, b) => a.total - b.total), visualCheck: true };
+      const offers = [...keep, ...rest].sort((a, b) => a.total - b.total);
+      return { ...data, offers, similar: [...moved, ...data.similar].sort((a, b) => a.total - b.total), visualCheck: true, checks };
     } catch (e) {
       console.warn("photo check failed", e);
       setCheckNote(null);
@@ -382,6 +390,11 @@ export default function Finder() {
                     : "No exact match found"}
                 </h2>
                 <p className="muted">Cheapest first, shipping included · {result.countries.join(" ")}</p>
+                {!result.demo && (
+                  <p className="muted small">
+                    Checked by: title {result.checks?.textCheck ?? "search words only"} · photo {result.checks?.photoCheck ?? "not compared"}
+                  </p>
+                )}
               </div>
               {saving && saving > 1 && (
                 <div className="save"><span>Save versus the usual price</span><strong>{eur(saving)} ({Math.round((saving / result.usualPrice!) * 100)}%)</strong></div>
@@ -449,6 +462,8 @@ function Row({ o, best }: { o: Offer; best: boolean }) {
         <span className="tags">
           {best && <span className="tag green">Lowest price</span>}
           {o.seen && <span className="tag green">Photo match</span>}
+          {!o.seen && o.strong === "code" && <span className="tag green">Article code match</span>}
+          {!o.seen && o.strong === "model" && <span className="tag green">Model name match</span>}
           {o.stock === "in" && <span className="tag green">In stock</span>}
           {off >= 5 && <span className="tag pink">-{off}%</span>}
           <span className="tag">{o.country}</span>
