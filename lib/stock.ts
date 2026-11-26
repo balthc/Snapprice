@@ -22,31 +22,6 @@ export function readAvailability(html: string): Stock {
 }
 
 export async function checkStock(url: string): Promise<Stock> {
-  try {
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; SnappriceBot/1.0; price comparison)",
-        Accept: "text/html,application/xhtml+xml",
-        "Accept-Language": "en,nl;q=0.8,de;q=0.6",
-      },
-      redirect: "follow",
-      signal: AbortSignal.timeout(5000),
-    });
-    if (res.status === 404 || res.status === 410) return "out";
-    if (!res.ok || !res.body) return "unknown";
-    // Read at most ~1.5 MB of the page.
-    const reader = res.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let size = 0;
-    while (size < 1_500_000) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      size += value.length;
-    }
-    reader.cancel().catch(() => {});
-    return readAvailability(new TextDecoder().decode(Buffer.concat(chunks)));
-  } catch {
-    return "unknown";
-  }
+  const { inspectPage } = await import("./page");
+  return (await inspectPage(url)).stock;
 }

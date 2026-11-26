@@ -7,11 +7,14 @@ import { mockOffers } from "@/lib/mock";
 import { contradicts } from "@/lib/attributes";
 import { strongMatch } from "@/lib/strong";
 import { describe } from "@/lib/prompts";
-import { checkStock } from "@/lib/stock";
+import { inspectPage } from "@/lib/page";
+import { hasShopify, searchShopify } from "@/lib/shopify";
+import { countryFromUrl } from "@/lib/lens";
+import { eurRates, toEur } from "@/lib/currency";
 import { verifyOffers } from "@/lib/verify";
 import { hasFeeds, searchFeeds } from "@/lib/feeds";
 import { activeProviders, dedupe, hasShopping, keywordFilter, searchCountry } from "@/lib/shopping";
-import type { Offer, SearchResult } from "@/lib/types";
+import type { Offer, SearchEvent, SearchResult } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -59,7 +62,36 @@ const Body = z.object({
     )
     .max(60)
     .optional(),
+  // Shop pages Google Lens found without a price: we read price, photo and stock from the page itself.
+  lensPages: z
+    .array(z.object({ url: httpUrl, title: z.string().max(300), shop: z.string().max(120), thumbnail: httpUrl.nullable() }))
+    .max(30)
+    .optional(),
 });
+
+type Emit = (e: SearchEvent) => void;
+
+const EU_CURRENCIES = ["EUR", "PLN", "DKK", "SEK", "CZK", "HUF", "RON", "BGN"];
+const direct = (o: Offer) => /^https?:\/\//.test(o.url) && !/(^|\.)google\./.test(new URL(o.url).hostname);
+
+// Lens pages without a price: open them (free) and keep the ones that show a price in an EU currency.
+async function offersFromPages(pages: { url: string; title: string; shop: string; thumbnail: string | null }[]): Promise<Offer[]> {
+  const infos = await Promise.all(pages.slice(0, 20).map((p) => inspectPage(p.url)));
+  const rates = await eurRates();
+  const out: Offer[] = [];
+  pages.slice(0, 20).forEach((p, i) => {
+    const info = infos[i];
+    const cur = (info.currency || "").toUpperCase();
+    if (!info.price || !EU_CURRENCIES.includes(cur) || info.stock === "out") return;
+    const price = toEur(info.price, cur, rates);
+    out.push({
+      source: "lens", country: countryFromUrl(p.url), shop: p.shop, title: info.title || p.title, url: p.url,
+      thumbnail: p.thumbnail, photo: info.image ?? undefined, price, oldPrice: null, shipping: null, total: price,
+      currency: cur, rating: null, reviews: null, match: "unsure", stock: info.stock === "in" ? "in" : "unknown",
+    });
+  });
+  return out;
+}
 
 function median(nums: number[]): number | null {
   if (!nums.length) return null;
@@ -71,15 +103,48 @@ function median(nums: number[]): number | null {
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
-  const { product, lensOffers = [], image } = parsed.data;
-  const picked = (parsed.data.countries ?? []).map((c) => c.toLowerCase()).filter((c) => c in COUNTRIES);
+  if (!(req.headers.get("accept") || "").includes("ndjson")) return NextResponse.json(await runSearch(parsed.data, () => {}));
+
+  // Streamed: the page shows countries lighting up and shops appearing while we search.
+  const enc = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      const emit: Emit = (e) => {
+        try {
+          controller.enqueue(enc.encode(JSON.stringify(e) + "\n"));
+        } catch {
+          /* shopper left */
+        }
+      };
+      try {
+        emit({ t: "done", result: await runSearch(parsed.data, emit) });
+      } catch (e) {
+        console.error("search failed", e);
+        emit({ t: "error", error: "Search failed. Please try again." });
+      }
+      controller.close();
+    },
+  });
+  return new Response(stream, { headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store", "X-Accel-Buffering": "no" } });
+}
+
+async function runSearch(input: z.infer<typeof Body>, emit: Emit): Promise<SearchResult> {
+  const { product, lensOffers = [], lensPages = [], image } = input;
+  const picked = (input.countries ?? []).map((c) => c.toLowerCase()).filter((c) => c in COUNTRIES);
   const countries = [...new Set(picked.length ? picked : searchCountries())].slice(0, maxCountries());
   const home = homeCountry();
 
   if (!hasShopping() && !hasEbay() && !hasFeeds()) {
-    await new Promise((r) => setTimeout(r, 1200));
+    const demo = mockOffers();
+    emit({ t: "plan", countries: countries.map((c) => c.toUpperCase()), sources: ["Demo"] });
+    emit({ t: "phase", phase: "searching" });
+    for (const [i, cc] of countries.entries()) {
+      await new Promise((r) => setTimeout(r, 110));
+      const o = demo[i % demo.length];
+      emit({ t: "found", label: cc.toUpperCase(), cc: cc.toUpperCase(), n: i % 3 ? 0 : 1, shops: i % 3 ? [] : [{ shop: o.shop, total: o.total, thumbnail: o.thumbnail }] });
+    }
     const result: SearchResult = {
-      offers: mockOffers(),
+      offers: demo,
       similar: [],
       visualCheck: false,
       countries: countries.map((c) => c.toUpperCase()),
@@ -88,27 +153,50 @@ export async function POST(req: Request) {
       demo: true,
       warnings: ["Demo mode: sample shops and prices. Add a SerpApi key to see live prices."],
     };
-    return NextResponse.json(result);
+    return result;
   }
 
   const warnings: string[] = [];
   const sources: string[] = [];
-  const jobs: { label: string; run: Promise<Offer[]> }[] = [];
+  const jobs: { label: string; cc: string | null; run: Promise<Offer[]> }[] = [];
   if (hasFeeds()) {
     sources.push("Partner shops");
-    jobs.push({ label: "partner shop feeds", run: searchFeeds(product, countries) });
+    jobs.push({ label: "partner shop feeds", cc: null, run: searchFeeds(product, countries) });
   }
   if (hasShopping()) {
     sources.push("Google Shopping");
-    for (const cc of countries) jobs.push({ label: `Google Shopping ${cc.toUpperCase()}`, run: searchCountry(product.searchQuery, cc) });
+    for (const cc of countries) jobs.push({ label: `Google Shopping ${cc.toUpperCase()}`, cc: cc.toUpperCase(), run: searchCountry(product.searchQuery, cc) });
   }
   if (hasEbay()) {
     sources.push("eBay");
-    for (const cc of ebayMarkets(countries)) jobs.push({ label: `eBay ${cc.toUpperCase()}`, run: searchEbay(product.searchQuery, cc, home) });
+    for (const cc of ebayMarkets(countries)) jobs.push({ label: `eBay ${cc.toUpperCase()}`, cc: cc.toUpperCase(), run: searchEbay(product.searchQuery, cc, home) });
   }
-  if (lensOffers.length) sources.push("Google Lens");
+  if (hasShopify()) {
+    sources.push("Independent shops");
+    jobs.push({ label: "independent shops", cc: null, run: searchShopify(`${product.brand} ${product.model}`.trim() || product.searchQuery, countries) });
+  }
+  if (lensPages.length) jobs.push({ label: "shop pages", cc: null, run: offersFromPages(lensPages) });
+  if (lensOffers.length || lensPages.length) sources.push("Google Lens");
 
-  const settled = await Promise.allSettled(jobs.map((j) => j.run));
+  emit({ t: "plan", countries: countries.map((c) => c.toUpperCase()), sources });
+  emit({ t: "phase", phase: "searching" });
+  if (lensOffers.length) emit({ t: "found", label: "Google Lens", cc: null, n: lensOffers.length, shops: lensOffers.slice(0, 4).map((o) => ({ shop: o.shop, total: o.total, thumbnail: o.thumbnail })) });
+  const quiet = new Set(["partner shop feeds", "independent shops", "shop pages"]); // bonus sources: no warning if they fail
+  const settled = await Promise.allSettled(
+    jobs.map((j) =>
+      j.run.then(
+        (v) => {
+          const top = [...v].sort((a, b) => a.total - b.total).slice(0, 4);
+          emit({ t: "found", label: j.label, cc: j.cc, n: v.length, shops: top.map((o) => ({ shop: o.shop, total: o.total, thumbnail: o.thumbnail })) });
+          return v;
+        },
+        (e) => {
+          emit({ t: "found", label: j.label, cc: j.cc, n: 0, shops: [] });
+          throw e;
+        }
+      )
+    )
+  );
   let offers: Offer[] = [...lensOffers];
   const failed: string[] = [];
   settled.forEach((s, i) => {
@@ -116,13 +204,13 @@ export async function POST(req: Request) {
     else {
       console.error(jobs[i].label, s.reason);
       // The partner database is a bonus source: if it's down or not set up yet, shoppers shouldn't see a warning.
-      if (jobs[i].label === "partner shop feeds") return;
+      if (quiet.has(jobs[i].label)) return;
       failed.push(jobs[i].label.replace("Google Shopping ", ""));
     }
   });
   if (failed.length) {
     warnings.push(
-      failed.length === jobs.filter((j) => j.label !== "partner shop feeds").length
+      failed.length === jobs.filter((j) => !quiet.has(j.label)).length
         ? `The price services didn't answer this time${activeProviders().length ? " (their free allowance may be used up)" : ""}. Please try again later.`
         : `Couldn't check: ${failed.join(", ")}.`
     );
@@ -137,6 +225,7 @@ export async function POST(req: Request) {
   });
 
   // Keep only listings of the same product: checked by AI if one is set up, otherwise by search words.
+  emit({ t: "phase", phase: "matching" });
   const provider = aiProvider();
   let checked = false;
   if (provider && offers.length) {
@@ -186,6 +275,7 @@ export async function POST(req: Request) {
   let visualCheck = false;
   let photoCheck: string | null = null;
   if (image && provider) {
+    emit({ t: "phase", phase: "photos" });
     const prevOffers = offers, prevSimilar = similar;
     const pool = dedupe([...offers, ...similar]).sort((a, b) => a.total - b.total).slice(0, 32);
     try {
@@ -209,11 +299,16 @@ export async function POST(req: Request) {
     }
   }
 
-  // Live stock check on the shop pages we link to directly (free). Out-of-stock offers are removed.
-  const toCheck = [...offers.slice(0, 40), ...similar.slice(0, 10)].filter((o) => o.stock === "unknown" && o.source === "lens").slice(0, 15);
-  const stock = await Promise.all(toCheck.map((o) => checkStock(o.url)));
-  const gone = new Set(toCheck.filter((_, i) => stock[i] === "out"));
-  toCheck.forEach((o, i) => { if (stock[i] === "in") o.stock = "in"; });
+  // Open the shop pages we link to directly (free): confirms stock, removes sold-out offers and
+  // takes the product photo from the shop's own page.
+  emit({ t: "phase", phase: "stock" });
+  const toCheck = [...offers.slice(0, 24), ...similar.slice(0, 8)].filter((o) => direct(o) && (o.stock === "unknown" || !o.photo)).slice(0, 24);
+  const pages = await Promise.all(toCheck.map((o) => inspectPage(o.url)));
+  const gone = new Set(toCheck.filter((_, i) => pages[i].stock === "out"));
+  toCheck.forEach((o, i) => {
+    if (pages[i].stock === "in") o.stock = "in";
+    if (pages[i].image && !o.photo) o.photo = pages[i].image!;
+  });
   if (gone.size) {
     offers = offers.filter((o) => !gone.has(o));
     similar = similar.filter((o) => !gone.has(o));
@@ -234,5 +329,5 @@ export async function POST(req: Request) {
     demo: false,
     warnings,
   };
-  return NextResponse.json(result);
+  return result;
 }

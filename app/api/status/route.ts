@@ -3,6 +3,7 @@ import { aiProvider } from "@/lib/ai";
 import { hasEbay } from "@/lib/ebay";
 import { COUNTRIES, homeCountry, maxCountries, searchCountries } from "@/lib/countries";
 import { hasFeeds } from "@/lib/feeds";
+import { hasShopify } from "@/lib/shopify";
 import { activeProviders, hasSerpApi, hasShopping } from "@/lib/shopping";
 
 export const runtime = "nodejs";
@@ -15,7 +16,7 @@ export async function GET() {
       livePrices: hasShopping() || hasEbay() || hasFeeds(),
       recognition: hasSerpApi() || aiProvider() !== null,
       feeds: hasFeeds(),
-      sources: [hasFeeds() && "Partner shop feeds", hasShopping() && "Google Shopping", hasEbay() && "eBay"].filter(Boolean),
+      sources: [hasFeeds() && "Partner shop feeds", hasShopping() && "Google Shopping", hasEbay() && "eBay", hasShopify() && "Independent shops"].filter(Boolean),
       priceProviders: activeProviders(),
       recogniser: aiProvider() ?? (hasSerpApi() ? "google-lens" : null),
       matchCheck: aiProvider(),

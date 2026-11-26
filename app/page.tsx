@@ -7,7 +7,7 @@ export default function Home() {
       <header className="nav">
         <div className="wrap">
           <a className="logo" href="#top" aria-label="Snapprice home">
-            <svg width="26" height="26" viewBox="0 0 28 28" aria-hidden="true"><path d="M3 4h11l11 11-10 10L3 13z" fill="var(--green)" /><circle cx="9" cy="9" r="2.4" fill="var(--bg)" /></svg>
+            <svg width="30" height="30" viewBox="0 0 28 28" aria-hidden="true"><path d="M3 4h11l11 11-10 10L3 13z" fill="#fff" /><circle cx="9" cy="9" r="2.4" fill="var(--page)" /></svg>
             Snapprice
           </a>
           <nav className="links" aria-label="Main">
@@ -21,7 +21,7 @@ export default function Home() {
       <main id="top">
         <section className="hero wrap" aria-labelledby="h1">
           <h1 id="h1">Find it cheaper. Anywhere in Europe.</h1>
-          <p className="lede">Drop a screenshot of any product. We recognise it and show the shops that have it in stock, cheapest first, shipping included.</p>
+          <p className="lede">Drop a screenshot of any product. We find the shops that have it in stock, cheapest first, shipping included.</p>
           <Finder />
         </section>
 

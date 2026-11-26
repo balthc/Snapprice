@@ -80,6 +80,26 @@ export async function lensOffers(matches: LensMatch[]): Promise<Offer[]> {
   return out;
 }
 
+// Visual matches without a price are often shop pages too: we read the price from the page itself
+// later (free). Skip social media, image sites and marketplaces we already cover.
+export type LensPage = { url: string; title: string; shop: string; thumbnail: string | null };
+const NOT_SHOPS = /(pinterest|instagram|facebook|tiktok|youtube|reddit|twitter|x\.com|tumblr|flickr|wikipedia|ebay\.|amazon\.|aliexpress|temu|vinted|depop|grailed|stockx|google\.)/i;
+export function lensPages(matches: LensMatch[]): LensPage[] {
+  const out: LensPage[] = [];
+  for (const m of matches) {
+    if (m.price?.extracted_value || !m.link || !m.title) continue;
+    let host = "";
+    try {
+      host = new URL(m.link).hostname.replace(/^www\./, "");
+    } catch {
+      continue;
+    }
+    if (NOT_SHOPS.test(host) || countryFromUrl(m.link) === "INT" && !/\.(com|eu|shop|store)$/.test(host)) continue;
+    out.push({ url: m.link, title: m.title, shop: m.source || host, thumbnail: m.thumbnail ?? null });
+  }
+  return out.slice(0, 25);
+}
+
 // Without an AI: build a product name from the words most Lens titles agree on.
 export function productFromTitles(titles: string[]): Product | null {
   const clean = titles

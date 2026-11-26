@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { aiProvider, identify } from "@/lib/ai";
 import { homeCountry } from "@/lib/countries";
-import { lensOffers, lensSearch, productFromTitles, uploadImage } from "@/lib/lens";
+import { lensOffers, lensPages, lensSearch, productFromTitles, uploadImage } from "@/lib/lens";
 import { MOCK_PRODUCT } from "@/lib/mock";
 import { hasSerpApi } from "@/lib/shopping";
 import type { Offer, Product } from "@/lib/types";
@@ -27,18 +27,20 @@ export async function POST(req: Request) {
 
   if (!provider && !lensOn) {
     await new Promise((r) => setTimeout(r, 900));
-    return NextResponse.json({ product: MOCK_PRODUCT, lensOffers: [], recognisedBy: "demo", demo: true });
+    return NextResponse.json({ product: MOCK_PRODUCT, lensOffers: [], lensPages: [], recognisedBy: "demo", demo: true });
   }
 
   // Step 1: Google Lens finds similar listings online (titles + shop pages with prices).
   let titles: string[] = [];
   let offers: Offer[] = [];
+  let pages: ReturnType<typeof lensPages> = [];
   if (lensOn && file.size <= LENS_MAX_BYTES && file.type !== "image/gif") {
     try {
       const id = await uploadImage(file);
       const matches = await lensSearch(id, homeCountry());
       titles = matches.map((m) => m.title).filter((t): t is string => Boolean(t)).slice(0, 15);
       offers = await lensOffers(matches);
+      pages = lensPages(matches);
     } catch (e) {
       console.error("lens failed", e);
     }
@@ -69,5 +71,5 @@ export async function POST(req: Request) {
       { status: 422 }
     );
   }
-  return NextResponse.json({ product, lensOffers: offers.slice(0, 40), recognisedBy, demo: false });
+  return NextResponse.json({ product, lensOffers: offers.slice(0, 40), lensPages: pages, recognisedBy, demo: false });
 }

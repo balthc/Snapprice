@@ -13,7 +13,7 @@ export type Product = {
 };
 
 export type Offer = {
-  source: "google" | "lens" | "ebay" | "feed" | "demo";
+  source: "google" | "lens" | "ebay" | "feed" | "shop" | "demo";
   country: string; // ISO code of the shop / marketplace, e.g. "IT"
   shop: string;
   title: string;
@@ -28,6 +28,7 @@ export type Offer = {
   reviews: number | null;
   match: "exact" | "likely" | "unsure";
   stock: "in" | "unknown"; // "in" = confirmed in stock; out-of-stock offers are removed
+  photo?: string; // product photo taken from the shop's own page (og:image / schema.org)
   strong?: "code" | "model"; // article code or full model name found in the title
   seen?: boolean; // photo compared with the shopper's screenshot and judged the same product
 };
@@ -43,3 +44,11 @@ export type SearchResult = {
   demo: boolean;
   warnings: string[];
 };
+
+// Live progress for the search page, sent line by line while the search runs.
+export type SearchEvent =
+  | { t: "plan"; countries: string[]; sources: string[] }
+  | { t: "phase"; phase: "searching" | "matching" | "photos" | "stock" }
+  | { t: "found"; label: string; cc: string | null; n: number; shops: { shop: string; total: number; thumbnail: string | null }[] }
+  | { t: "done"; result: SearchResult }
+  | { t: "error"; error: string };

@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { Offer, Product, SearchResult } from "@/lib/types";
+import type { Offer, Product, SearchEvent, SearchResult } from "@/lib/types";
 import { FREE_SEARCHES_PER_MONTH } from "@/lib/site";
-import { scorePhotos } from "@/lib/photocheck";
+import { proxied, scorePhotos } from "@/lib/photocheck";
+import type { LensPage } from "@/lib/lens";
+import LiveSearch, { type Live } from "./LiveSearch";
 
 type Stage = "idle" | "identifying" | "confirm" | "identified" | "searching" | "checking" | "done";
 
@@ -90,12 +92,15 @@ export default function Finder() {
   const [colour, setColour] = useState("");
   const [size, setSize] = useState("");
   const [lens, setLens] = useState<Offer[]>([]);
+  const [pages, setPages] = useState<LensPage[]>([]);
+  const [live, setLive] = useState<Live | null>(null);
   const [shot, setShot] = useState<{ data: string; mime: string } | null>(null);
   const [showSimilar, setShowSimilar] = useState(false);
   const [spec, setSpec] = useState<Spec>({ brand: "", type: "", colour: "", model: "", fit: "" });
   const [checkNote, setCheckNote] = useState<string | null>(null);
   const [recognisedBy, setRecognisedBy] = useState<string | null>(null);
   const [over, setOver] = useState(false);
+  const [identStep, setIdentStep] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const quota = useQuota();
   const [status, setStatus] = useState<{
@@ -111,6 +116,12 @@ export default function Finder() {
     fetch("/api/status", { cache: "no-store" }).then((r) => r.json()).then(setStatus).catch(() => {});
   }, []);
   const busy = stage === "identifying" || stage === "searching" || stage === "checking";
+  useEffect(() => {
+    if (stage !== "identifying") return;
+    setIdentStep(0);
+    const t = setInterval(() => setIdentStep((n) => Math.min(n + 1, 3)), 2200);
+    return () => clearInterval(t);
+  }, [stage]);
 
   // Paste a screenshot anywhere on the page (Ctrl/Cmd+V).
   useEffect(() => {
@@ -130,24 +141,25 @@ export default function Finder() {
     return { ...p, colour: c, searchQuery: `${p.searchQuery} ${c}` };
   }
 
-  async function search(p: Product, lensFound: Offer[] = lens, image = shot) {
+  async function search(p: Product, lensFound: Offer[] = lens, image = shot, lensPagesFound: LensPage[] = pages) {
     if (blocked) return;
     setShowSimilar(false);
     setStage("searching");
     setError(null);
     setResult(null);
     try {
+      setLive({ phase: "searching", countries: [], sources: [], done: [], found: 0, shops: [] });
       const res = await fetch("/api/search", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ product: p, size: size.trim() || undefined, lensOffers: lensFound, image: image ?? undefined }),
+        headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
+        body: JSON.stringify({ product: p, size: size.trim() || undefined, lensOffers: lensFound, lensPages: lensPagesFound, image: image ?? undefined }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Search failed.");
+      const data = await readStream(res);
       if (data.demo) setDemo(true);
       quota.bump();
       if (image && !data.visualCheck && !data.demo && data.offers.length) {
         setResult(data);
+        setLive((l) => (l ? { ...l, phase: "photos", seen: [...(l.seen ?? []), l.phase] } : l));
         setStage("checking");
         setResult(await photoCheck(data, image));
       } else {
@@ -158,6 +170,52 @@ export default function Finder() {
       setError((e as Error).message);
       setStage("identified");
     }
+  }
+
+  // Reads the live search: countries light up and shops appear while the server searches.
+  async function readStream(res: Response): Promise<SearchResult> {
+    const type = res.headers.get("content-type") || "";
+    if (!res.ok || !type.includes("ndjson") || !res.body) {
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Search failed.");
+      return data as SearchResult;
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    let result: SearchResult | null = null;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line) continue;
+        const e = JSON.parse(line) as SearchEvent;
+        if (e.t === "done") result = e.result;
+        else if (e.t === "error") throw new Error(e.error);
+        else
+          setLive((l) => {
+            const cur = l ?? { phase: "searching" as const, countries: [], sources: [], done: [], found: 0, shops: [] };
+            if (e.t === "plan") return { ...cur, countries: e.countries, sources: e.sources };
+            if (e.t === "phase") return { ...cur, phase: e.phase, seen: [...(cur.seen ?? []), cur.phase] };
+            return {
+              ...cur,
+              done: e.cc && e.n > 0 && !cur.done.includes(e.cc) ? [...cur.done, e.cc] : cur.done,
+              tried: e.cc ? [...(cur.tried ?? []), e.cc] : cur.tried,
+              found: cur.found + e.n,
+              shops: [
+                ...e.shops.map((x) => ({ ...x, key: `${e.label}-${x.shop}-${x.total}` })),
+                ...cur.shops.filter((x) => !e.shops.some((y) => y.shop === x.shop)),
+              ].slice(0, 8),
+            };
+          });
+      }
+    }
+    if (!result) throw new Error("Search was interrupted. Please try again.");
+    return result;
   }
 
   // Free in-browser photo check (colour + FashionCLIP): photos that clearly don't match move to "similar".
@@ -203,6 +261,7 @@ export default function Finder() {
     setResult(null);
     setProduct(null);
     setLens([]);
+    setPages([]);
     setPreview(URL.createObjectURL(file));
     setStage("identifying");
     try {
@@ -219,6 +278,7 @@ export default function Finder() {
       const p = withColour(data.product);
       setProduct(p);
       setLens(data.lensOffers ?? []);
+      setPages(data.lensPages ?? []);
       setRecognisedBy(data.recognisedBy ?? null);
       if (data.demo) setDemo(true);
       setSpec({
@@ -252,10 +312,11 @@ export default function Finder() {
     const full = withColour(p);
     setPreview(null);
     setLens([]);
+    setPages([]);
     setShot(null);
     setRecognisedBy(null);
     setProduct(full);
-    search(full, [], null);
+    search(full, [], null, []);
   }
 
   function onConfirm(e: React.FormEvent) {
@@ -292,7 +353,7 @@ export default function Finder() {
     <>
       <div className="finder">
         <label
-          className={`drop${over ? " over" : ""}${busy ? " busy" : ""}`}
+          className={`drop${over ? " over" : ""}${busy ? " busy" : ""}${stage !== "idle" && stage !== "identifying" ? " compact" : ""}`}
           onDragOver={(e) => { e.preventDefault(); setOver(true); }}
           onDragLeave={() => setOver(false)}
           onDrop={(e) => { e.preventDefault(); setOver(false); onFile(e.dataTransfer.files?.[0]); }}
@@ -303,7 +364,7 @@ export default function Finder() {
             <img className="shot" src={preview} alt="Your screenshot" />
           ) : (
             <span className="icon" aria-hidden="true">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" /></svg>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 16V4M7 9l5-5 5 5" /><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" /></svg>
             </span>
           )}
           <span>
@@ -311,6 +372,13 @@ export default function Finder() {
             <br />
             <small>{busy ? "This takes 10 to 30 seconds" : "or click to choose one, or paste it. Shop pages, Instagram posts and photos all work."}</small>
           </span>
+          {stage === "identifying" && (
+            <span className="ident" aria-hidden="true">
+              {["Reading the shape", "Spotting the logo", "Matching online", "Naming the item"].map((t, i) => (
+                <span key={t} className={i <= identStep ? "on" : ""}>{t}</span>
+              ))}
+            </span>
+          )}
           {busy && <span className="scan" aria-hidden="true" />}
         </label>
 
@@ -371,10 +439,7 @@ export default function Finder() {
             </div>
           )}
 
-          {stage === "checking" && checkNote && <p className="note"><span className="spinner" />{checkNote}</p>}
-          {stage === "searching" && (
-            <div className="rows"><div className="skeleton" /><div className="skeleton" /><div className="skeleton" /></div>
-          )}
+          {(stage === "searching" || stage === "checking") && live && <LiveSearch live={live} note={checkNote} />}
 
           {result && stage === "done" && (
             <>
@@ -448,14 +513,7 @@ function Row({ o, best }: { o: Offer; best: boolean }) {
   const off = o.oldPrice ? Math.round((1 - o.price / o.oldPrice) * 100) : 0;
   const body = (
     <>
-      <span className="pic">
-        {o.thumbnail ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={o.thumbnail} alt="" loading="lazy" referrerPolicy="no-referrer" />
-        ) : (
-          <span>{o.country}</span>
-        )}
-      </span>
+      <Pic o={o} />
       <span className="info">
         <b>{o.shop}</b>
         <span className="t">{o.title}</span>
@@ -488,5 +546,27 @@ function Row({ o, best }: { o: Offer; best: boolean }) {
         <a className={`row${best ? " best" : ""}`} href={o.url} target="_blank" rel="noopener noreferrer nofollow" title={o.title}>{body}</a>
       )}
     </li>
+  );
+}
+
+// Product photo: the shop's own photo first (from its product page), then the search thumbnail.
+function Pic({ o }: { o: Offer }) {
+  const isDirect = /^https?:\/\//.test(o.url) && o.source !== "demo";
+  const chain = [
+    o.photo ? proxied(o.photo) : null,
+    !o.photo && isDirect ? `/api/pageimg?u=${encodeURIComponent(o.url)}` : null,
+    o.thumbnail,
+  ].filter((x): x is string => Boolean(x));
+  const [i, setI] = useState(0);
+  const src = chain[i];
+  return (
+    <span className="pic">
+      {src ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setI((n) => n + 1)} />
+      ) : (
+        <span>{o.country}</span>
+      )}
+    </span>
   );
 }
