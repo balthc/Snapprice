@@ -155,3 +155,16 @@ npm run dev                  # http://localhost:3000
 ```
 
 Next.js (App Router) + TypeScript. API routes: `app/api/identify` (image → product, Claude vision with structured output) and `app/api/search` (SerpApi Google Shopping per country → Claude match check → ranked offers). Currency rates from the ECB via frankfurter.app.
+
+## Small-shop index (free, nightly)
+
+Independent webshops are discovered automatically: every shop that appears in a search result or in
+Google's "more stores" list is saved in the `shops` table. Add your own in `db/seed-shops.txt`.
+Every night `.github/workflows/crawl-shops.yml` runs `scripts/crawl-shops.mjs`, which reads each shop's
+public product data (Shopify `/products.json`, WooCommerce Store API, or sitemap + schema.org product
+pages) into `products`, so prices and one-day sales are at most a day old. Searches read this index.
+
+Polite: identifies as SnappriceBot (see `/bot`), follows robots.txt and Crawl-delay, max one request per
+1.5 s per shop. Opt-out: robots.txt, the `OPTOUT_DOMAINS` repository variable, or set `status = 'optout'`.
+Setup: run `db/schema.sql` in Supabase again (adds the `shops` table), add the `DATABASE_URL` secret and a
+`SITE_URL` repository variable (Settings → Secrets and variables → Actions).

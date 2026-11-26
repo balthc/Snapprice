@@ -9,6 +9,7 @@ import { keywordMatch, shopQuery, strongMatch } from "@/lib/strong";
 import { describe } from "@/lib/prompts";
 import { inspectPage } from "@/lib/page";
 import { variantCheck } from "@/lib/variant";
+import { rememberShops } from "@/lib/discover";
 import { hasShopify, searchShopify } from "@/lib/shopify";
 import { hasBol, searchBol } from "@/lib/bol";
 import { countryFromUrl } from "@/lib/lens";
@@ -166,7 +167,7 @@ async function runSearch(input: z.infer<typeof Body>, emit: Emit): Promise<Searc
   const query = shopQuery(product);
   const jobs: { label: string; cc: string | null; run: Promise<Offer[]> }[] = [];
   if (hasFeeds()) {
-    sources.push("Partner shops");
+    sources.push("Small-shop index");
     jobs.push({ label: "partner shop feeds", cc: null, run: searchFeeds(product, countries) });
   }
   if (hasShopping()) {
@@ -354,6 +355,9 @@ async function runSearch(input: z.infer<typeof Body>, emit: Emit): Promise<Searc
     offers = offers.filter((o) => !gone.has(o));
     similar = similar.filter((o) => !gone.has(o));
   }
+
+  // Small-shop index: remember every webshop we saw, so the nightly crawler indexes it.
+  await rememberShops([...offers, ...similar, ...lensPages.map((p) => ({ url: p.url, shop: p.shop }))].filter((o) => /^https?:/.test(o.url)).map((o) => ({ url: o.url, name: o.shop })));
 
   // "Usual price": the typical price in the shopper's home country, otherwise the typical listed price.
   const homePrices = offers.filter((o) => o.country === home.toUpperCase()).map((o) => o.oldPrice ?? o.total);

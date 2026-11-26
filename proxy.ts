@@ -39,5 +39,5 @@ export function proxy(req: NextRequest) {
 
 export const config = {
   // Run on everything except Next.js files, the icon and the maintenance page itself.
-  matcher: ["/((?!_next/|icon.svg|favicon.ico|maintenance).*)"],
+  matcher: ["/((?!_next/|icon.svg|favicon.ico|maintenance|bot).*)"],
 };

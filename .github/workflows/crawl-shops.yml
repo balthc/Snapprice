@@ -1,0 +1,25 @@
+name: Refresh small-shop index
+
+# Every night at 02:00 UTC (03:00 in Amsterdam), and whenever you press "Run workflow" (Actions tab).
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/crawl-shops.mjs
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SITE_URL: ${{ vars.SITE_URL }}
+          OPTOUT_DOMAINS: ${{ vars.OPTOUT_DOMAINS }}
+          CRAWL_MINUTES: "45"

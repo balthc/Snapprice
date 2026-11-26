@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rememberShops } from "@/lib/discover";
 import { serpApiKey } from "@/lib/env";
 
 export const runtime = "nodejs";
@@ -48,6 +49,8 @@ export async function GET(req: NextRequest) {
     const res = await fetch(`https://serpapi.com/search.json?${params}`, { signal: AbortSignal.timeout(20_000) });
     const data = (await res.json()) as { product_results?: { stores?: Store[] } };
     const stores = data.product_results?.stores ?? [];
+    // Every shop selling this product goes into the small-shop index.
+    await rememberShops(stores.filter((s) => safeHttp(s.link)).map((s) => ({ url: s.link!, name: s.name })));
     const want = norm(shop);
     const match =
       stores.find((s) => s.name && norm(s.name) === want) ??

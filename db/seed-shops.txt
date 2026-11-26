@@ -1,0 +1,33 @@
+# Starter list for the small-shop index: one webshop per line (domain, optional country).
+# Shops are also added automatically when they show up in search results.
+# Lines starting with # are ignored.
+www.patta.nl NL
+www.asphaltgold.com DE
+www.afew-store.com DE
+www.naked-copenhagen.com DK
+www.nittygrittystore.com SE
+www.norsestore.com DK
+www.oqium.com NL
+www.sneakerdistrict.com NL
+www.thenextdoor.fr FR
+www.wodstore.com FR
+www.firmament.berlin DE
+www.uebervart-shop.de DE
+www.baskets-store.com BE
+www.livestock.nl NL
+www.titan22.com CY
+www.footdistrict.com ES
+www.sivasdescalzo.com ES
+www.overkillshop.com DE
+www.43einhalb.com DE
+www.allikestore.com DE
+www.titus.de DE
+www.skatedeluxe.com DE
+www.blue-tomato.com AT
+www.skatepro.com DK
+www.ollieshop.com IT
+www.bivio.it IT
+www.slamjam.com IT
+www.lessoeurs.com NL
+www.stoy.com NL
+www.skateboardshop.nl NL

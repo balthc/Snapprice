@@ -9,14 +9,14 @@ import type { Offer, Product } from "./types";
 export const hasFeeds = () => Boolean(databaseUrl());
 
 let sql: ReturnType<typeof postgres> | null = null;
-function db() {
+export function db() {
   const url = databaseUrl()!;
   sql ??= postgres(url, { max: 3, idle_timeout: 20, prepare: false, connect_timeout: 5, ssl: /sslmode=disable/.test(url) ? false : "require" });
   return sql;
 }
 
 type Row = {
-  merchant: string; country: string; title: string; colour: string | null; size: string | null; price: string;
+  network: string; merchant: string; country: string; title: string; colour: string | null; size: string | null; price: string;
   old_price: string | null; shipping: string | null; currency: string; url: string; image: string | null;
 };
 
@@ -43,10 +43,10 @@ async function queryFeeds(product: Product, countries: string[]): Promise<Offer[
   const core = words.filter((w) => !(product.colour || "").toLowerCase().includes(w) && !(product.fit || "").toLowerCase().includes(w));
   const tsq = (core.length ? core : words).map((w) => w.replace(/'/g, "") + ":*").join(" & ");
   const rows = await db()<Row[]>`
-    select merchant, country, title, colour, size, price, old_price, shipping, currency, url, image
+    select network, merchant, country, title, colour, size, price, old_price, shipping, currency, url, image
     from products
     where in_stock and search @@ to_tsquery('simple', ${tsq})
-      and country = any(${countries.map((c) => c.toUpperCase())})
+      and country = any(${[...countries.map((c) => c.toUpperCase()), "EU"]})
     order by price asc
     limit 200`;
   const rates = await eurRates();
@@ -55,7 +55,7 @@ async function queryFeeds(product: Product, countries: string[]): Promise<Offer[
     const shipping = r.shipping === null ? null : toEur(Number(r.shipping), r.currency, rates);
     const old = r.old_price ? toEur(Number(r.old_price), r.currency, rates) : null;
     return {
-      source: "feed" as const,
+      source: (r.network === "index" ? "shop" : "feed") as Offer["source"],
       country: r.country,
       shop: r.merchant,
       title: [r.title, r.colour && !r.title.toLowerCase().includes(r.colour.toLowerCase()) ? r.colour : ""].filter(Boolean).join(" · "),

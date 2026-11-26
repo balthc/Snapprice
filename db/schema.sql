@@ -28,3 +28,21 @@ create table if not exists products (
 create index if not exists products_search_idx on products using gin (search);
 create index if not exists products_ean_idx on products (ean);
 create index if not exists products_feed_idx on products (feed, updated_at);
+
+-- Small-shop index: independent webshops found automatically (from search results) or added by hand.
+-- The nightly crawler (scripts/crawl-shops.mjs) reads their public product data into "products"
+-- (feed = 'shop:<domain>', network = 'index').
+create table if not exists shops (
+  domain        text primary key,            -- e.g. "skateshop-milano.it"
+  name          text,
+  country       text not null default 'EU',
+  currency      text,
+  platform      text,                        -- shopify, woocommerce, sitemap, unknown
+  status        text not null default 'new', -- new, ok, blocked (robots.txt), failed, optout
+  found_via     text,                        -- search, seed, manual
+  products      integer not null default 0,
+  fails         integer not null default 0,
+  last_crawled  timestamptz,
+  created_at    timestamptz not null default now()
+);
+create index if not exists shops_crawl_idx on shops (status, last_crawled nulls first);
