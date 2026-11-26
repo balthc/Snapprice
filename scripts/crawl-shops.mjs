@@ -26,8 +26,14 @@ const SCHEME = process.env.CRAWL_SCHEME || "https"; // "http" only for local tes
 const SITE = (process.env.SITE_URL || "https://snapprice.vercel.app").replace(/\/$/, "");
 const UA = `Mozilla/5.0 (compatible; SnappriceBot/1.0; +${SITE}/bot)`;
 const BUDGET_MS = Number(process.env.CRAWL_MINUTES || 40) * 60_000;
-const PARALLEL = Number(process.env.CRAWL_PARALLEL || 8);
-const MAX_SITEMAP = Number(process.env.MAX_PAGES_SITEMAP || 250);
+const PARALLEL = Number(process.env.CRAWL_PARALLEL || 24); // different shops at once; each shop still gets 1 request at a time
+const MAX_SITEMAP = Number(process.env.MAX_PAGES_SITEMAP || 150);
+// Keep the free database (Supabase: 500 MB) from filling up.
+const MAX_PER_SHOP = Number(process.env.MAX_PRODUCTS_PER_SHOP || 3000);
+const DB_LIMIT_MB = Number(process.env.DB_LIMIT_MB || 420);
+// Split the work over several parallel GitHub jobs (shards), each with its own time budget.
+const SHARD = Number(process.env.SHARD || 0);
+const SHARDS = Number(process.env.SHARDS || 1);
 const MIN_GAP_MS = 1500;
 const started = Date.now();
 const timeLeft = () => BUDGET_MS - (Date.now() - started);
@@ -298,7 +304,9 @@ async function crawlShop(shop) {
   }
   const feed = `shop:${shop.domain}`;
   const stamp = new Date();
-  const rows = result.products.map((p) => ({
+  // In-stock products first, then the per-shop cap (big catalogues would crowd out small shops).
+  const kept = [...result.products].sort((a, b) => Number(b.in_stock) - Number(a.in_stock)).slice(0, MAX_PER_SHOP);
+  const rows = kept.filter((p) => p.in_stock).map((p) => ({
     id: p.id, feed, network: "index", merchant: shop.name || bare, country: shop.country, title: p.title.slice(0, 500),
     brand: p.brand, colour: null, size: p.size, ean: p.ean, price: p.price, old_price: p.old_price, shipping: null,
     currency: (p.currency || "EUR").toUpperCase(), url: p.url, image: p.image, in_stock: p.in_stock, updated_at: stamp,
@@ -330,14 +338,21 @@ async function main() {
     const d = domain.toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
     return { domain: d, country: (country || countryOf(d)).toUpperCase(), found_via: "seed" };
   });
-  if (seeds.length) await sql`insert into shops ${sql(seeds, "domain", "country", "found_via")} on conflict (domain) do nothing`;
+  if (seeds.length && SHARD === 0) await sql`insert into shops ${sql(seeds, "domain", "country", "found_via")} on conflict (domain) do nothing`;
+
+  // Database size guard: when near the free limit, only refresh shops already in the index.
+  const [{ mb }] = await sql`select (pg_database_size(current_database()) / 1048576)::int as mb`;
+  const full = mb > DB_LIMIT_MB;
+  if (full) console.log(`Database is ${mb} MB (limit ${DB_LIMIT_MB} MB): refreshing known shops only, no new shops tonight.`);
 
   // Daily: shops never crawled first, then the ones crawled longest ago. Failing shops are retried less.
   const shops = await sql`
     select domain, name, country, currency, platform from shops
     where status not in ('optout', 'blocked') and (status <> 'failed' or fails < 3 or last_crawled < now() - interval '7 days')
       and (last_crawled is null or last_crawled < now() - interval '20 hours')
-    order by last_crawled asc nulls first
+      and (${!full} or status = 'ok')
+      and abs(hashtext(domain)) % ${SHARDS} = ${SHARD}
+    order by (status = 'ok') desc, last_crawled asc nulls first
     limit 2000`;
   console.log(`${shops.length} shops to refresh, ${PARALLEL} at a time, ${Math.round(BUDGET_MS / 60000)} min budget`);
   let i = 0;
@@ -348,6 +363,12 @@ async function main() {
     }
   };
   await Promise.all(Array.from({ length: PARALLEL }, worker));
+  // Cleanup: sold-out products that haven't come back for 3 days, and shops gone for 2 weeks.
+  if (SHARD === 0) {
+    const gone = await sql`delete from products where network = 'index' and not in_stock and updated_at < now() - interval '3 days'`;
+    const stale = await sql`delete from products where network = 'index' and updated_at < now() - interval '14 days'`;
+    console.log(`Cleanup: removed ${gone.count + stale.count} old products.`);
+  }
   console.log(`Done in ${Math.round((Date.now() - started) / 60000)} min.`);
   await sql.end();
 }

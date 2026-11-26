@@ -8,6 +8,11 @@ on:
 
 jobs:
   crawl:
+    # 4 jobs side by side, each takes a quarter of the shops (free on public repositories).
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     runs-on: ubuntu-latest
     timeout-minutes: 55
     steps:
@@ -23,3 +28,5 @@ jobs:
           SITE_URL: ${{ vars.SITE_URL }}
           OPTOUT_DOMAINS: ${{ vars.OPTOUT_DOMAINS }}
           CRAWL_MINUTES: "45"
+          SHARD: ${{ matrix.shard }}
+          SHARDS: "4"
